@@ -1,5 +1,6 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
+from typing import Any, TypedDict
 
 import yt_dlp
 
@@ -7,7 +8,17 @@ from . import cache
 from .config import Settings
 
 
-def _make_ydl_opts(settings: Settings, flat: bool = False) -> dict:
+class TrackSummary(TypedDict):
+    """A search result or playlist entry, without a stream URL."""
+
+    title: str
+    webpage_url: str
+    duration_seconds: int | None
+    duration_formatted: str | None
+    thumbnail_url: str | None
+
+
+def _make_ydl_opts(settings: Settings, flat: bool = False) -> dict[str, Any]:
     return {
         "format": settings.ydl_format,
         "noplaylist": True,
@@ -25,7 +36,7 @@ def _format_duration(seconds: int | None) -> str | None:
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
 
-def _parse_info(info: dict) -> dict:
+def _parse_info(info: dict[str, Any]) -> dict[str, Any]:
     stream_url = info.get("url")
     return {
         "source": info.get("extractor_key", "unknown").lower(),
@@ -45,14 +56,15 @@ def _parse_info(info: dict) -> dict:
     }
 
 
-def _extract_blocking(url: str, ydl_opts: dict) -> dict:
+def _extract_blocking(url: str, ydl_opts: dict[str, Any]) -> dict[str, Any]:
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        return ydl.extract_info(url, download=False)  # type: ignore[return-value]
+        info: dict[str, Any] = ydl.extract_info(url, download=False)
+    return info
 
 
 def _search_blocking(
-    query: str, source: str, max_results: int, ydl_opts: dict
-) -> list[dict]:
+    query: str, source: str, max_results: int, ydl_opts: dict[str, Any]
+) -> list[dict[str, Any]]:
     search_url = (
         f"ytsearch{max_results}:{query}"
         if source == "youtube"
@@ -60,11 +72,12 @@ def _search_blocking(
     )
     flat_opts = {**ydl_opts, "extract_flat": True}
     with yt_dlp.YoutubeDL(flat_opts) as ydl:
-        result = ydl.extract_info(search_url, download=False)
-    return result.get("entries", []) if result else []  # type: ignore[union-attr]
+        result: dict[str, Any] | None = ydl.extract_info(search_url, download=False)
+    entries: list[dict[str, Any]] = result.get("entries", []) if result else []
+    return entries
 
 
-async def fetch_info(url: str, settings: Settings) -> dict:
+async def fetch_info(url: str, settings: Settings) -> dict[str, Any]:
     cached = cache.get_metadata(url)
     if cached:
         stream = cache.get_stream_url(url)
@@ -88,7 +101,7 @@ async def fetch_info(url: str, settings: Settings) -> dict:
     return parsed
 
 
-def _entry_to_playlist_track(entry: dict) -> dict:
+def _entry_to_playlist_track(entry: dict[str, Any]) -> TrackSummary:
     webpage_url = entry.get("webpage_url") or entry.get("url") or ""
     if not webpage_url and entry.get("id"):
         webpage_url = f"https://www.youtube.com/watch?v={entry['id']}"
@@ -101,7 +114,7 @@ def _entry_to_playlist_track(entry: dict) -> dict:
     }
 
 
-async def fetch_playlist(url: str, settings: Settings) -> list[dict]:
+async def fetch_playlist(url: str, settings: Settings) -> list[TrackSummary]:
     opts = {**_make_ydl_opts(settings, flat=True), "noplaylist": False}
     raw = await asyncio.to_thread(_extract_blocking, url, opts)
     entries = raw.get("entries")
@@ -113,7 +126,7 @@ async def fetch_playlist(url: str, settings: Settings) -> list[dict]:
 
 async def search(
     query: str, source: str, max_results: int, settings: Settings
-) -> list[dict]:
+) -> list[TrackSummary]:
     opts = _make_ydl_opts(settings, flat=True)
     entries = await asyncio.to_thread(
         _search_blocking, query, source, max_results, opts

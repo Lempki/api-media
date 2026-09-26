@@ -1,5 +1,6 @@
 import asyncio
 import re
+from typing import Any
 
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
@@ -34,7 +35,7 @@ def _get_client(settings: Settings) -> spotipy.Spotify:
     )
 
 
-async def get_info(url: str, settings: Settings) -> dict:
+async def get_info(url: str, settings: Settings) -> dict[str, Any]:
     """Resolve a Spotify track URL to a MediaInfo dict via YouTube search."""
     if settings.spotify_client_id and settings.spotify_client_secret:
         m = _TRACK_RE.search(url)
@@ -84,7 +85,9 @@ async def get_collection(url: str, settings: Settings) -> list[PlaylistTrack]:
     playlist_m = _PLAYLIST_RE.search(url)
 
     if album_m:
-        page: dict | None = await asyncio.to_thread(sp.album_tracks, album_m.group(1))
+        page: dict[str, Any] | None = await asyncio.to_thread(
+            sp.album_tracks, album_m.group(1)
+        )
         while page:
             for item in page.get("items", []):
                 if item and item.get("name") and item.get("artists"):
