@@ -88,7 +88,13 @@ async def get_collection(url: str, settings: Settings) -> list[PlaylistTrack]:
         while page:
             for item in page.get("items", []):
                 if item and item.get("name") and item.get("artists"):
-                    raw_tracks.append((item["name"], item["artists"][0]["name"], item.get("duration_ms")))
+                    raw_tracks.append(
+                        (
+                            item["name"],
+                            item["artists"][0]["name"],
+                            item.get("duration_ms"),
+                        )
+                    )
             page = await asyncio.to_thread(sp.next, page) if page.get("next") else None
     elif playlist_m:
         page = await asyncio.to_thread(
@@ -103,13 +109,20 @@ async def get_collection(url: str, settings: Settings) -> list[PlaylistTrack]:
                 track = item.get("track")
                 if track and track.get("name") and track.get("artists"):
                     raw_tracks.append(
-                        (track["name"], track["artists"][0]["name"], track.get("duration_ms"))
+                        (
+                            track["name"],
+                            track["artists"][0]["name"],
+                            track.get("duration_ms"),
+                        )
                     )
             page = await asyncio.to_thread(sp.next, page) if page.get("next") else None
     else:
         raise ValueError(f"URL is not a Spotify album or playlist: {url}")
 
     sem = asyncio.Semaphore(5)
-    tasks = [_resolve_one(name, artist, dur, settings, sem) for name, artist, dur in raw_tracks]
+    tasks = [
+        _resolve_one(name, artist, dur, settings, sem)
+        for name, artist, dur in raw_tracks
+    ]
     resolved = await asyncio.gather(*tasks)
     return [t for t in resolved if t is not None]

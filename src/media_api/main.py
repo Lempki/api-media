@@ -9,7 +9,15 @@ from . import cache
 from .auth import require_auth
 from .config import Settings, get_settings
 from .extractor import fetch_info, fetch_playlist, search
-from .models import HealthResponse, MediaInfo, PlaylistResponse, PlaylistTrack, SearchRequest, SearchResponse, SearchResult
+from .models import (
+    HealthResponse,
+    MediaInfo,
+    PlaylistResponse,
+    PlaylistTrack,
+    SearchRequest,
+    SearchResponse,
+    SearchResult,
+)
 from .sources import spotify
 
 
@@ -23,10 +31,15 @@ def _configure_logging(level: str) -> None:
             "version": 1,
             "formatters": {
                 "json": {
-                    "format": '{"time":"%(asctime)s","level":"%(levelname)s","name":"%(name)s","message":"%(message)s"}'
+                    "format": (
+                        '{"time":"%(asctime)s","level":"%(levelname)s",'
+                        '"name":"%(name)s","message":"%(message)s"}'
+                    )
                 }
             },
-            "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "json"}},
+            "handlers": {
+                "console": {"class": "logging.StreamHandler", "formatter": "json"}
+            },
             "root": {"level": level, "handlers": ["console"]},
         }
     )
@@ -56,9 +69,14 @@ async def media_info(
     source: str = Query(default="youtube"),
 ) -> MediaInfo:
     if url and query:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Provide either url or query, not both.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Provide either url or query, not both.",
+        )
     if not url and not query:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Provide url or query.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Provide url or query."
+        )
 
     try:
         if url:
@@ -69,15 +87,21 @@ async def media_info(
         else:
             results = await search(query, source, 1, settings)  # type: ignore[arg-type]
             if not results:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No results found.")
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="No results found."
+                )
             info = await fetch_info(results[0]["webpage_url"], settings)
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
 
     return MediaInfo(**info)
 
 
-@app.post("/media/search", response_model=SearchResponse, dependencies=[Depends(require_auth)])
+@app.post(
+    "/media/search", response_model=SearchResponse, dependencies=[Depends(require_auth)]
+)
 async def media_search(
     body: SearchRequest,
     settings: Annotated[Settings, Depends(get_settings)],
@@ -86,12 +110,18 @@ async def media_search(
     try:
         entries = await search(body.query, body.source, max_results, settings)
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
 
     return SearchResponse(results=[SearchResult(**e) for e in entries])
 
 
-@app.get("/media/playlist", response_model=PlaylistResponse, dependencies=[Depends(require_auth)])
+@app.get(
+    "/media/playlist",
+    response_model=PlaylistResponse,
+    dependencies=[Depends(require_auth)],
+)
 async def media_playlist(
     settings: Annotated[Settings, Depends(get_settings)],
     url: str = Query(...),
@@ -121,6 +151,8 @@ async def media_playlist(
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from exc
 
     return PlaylistResponse(tracks=tracks)

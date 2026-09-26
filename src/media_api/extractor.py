@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import yt_dlp
 
@@ -37,7 +37,7 @@ def _parse_info(info: dict) -> dict:
         "webpage_url": info.get("webpage_url", ""),
         "stream_url": stream_url,
         "stream_url_expires_at": (
-            (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+            (datetime.now(UTC) + timedelta(minutes=5)).isoformat()
             if stream_url
             else None
         ),
@@ -50,8 +50,14 @@ def _extract_blocking(url: str, ydl_opts: dict) -> dict:
         return ydl.extract_info(url, download=False)  # type: ignore[return-value]
 
 
-def _search_blocking(query: str, source: str, max_results: int, ydl_opts: dict) -> list[dict]:
-    search_url = f"ytsearch{max_results}:{query}" if source == "youtube" else f"scsearch{max_results}:{query}"
+def _search_blocking(
+    query: str, source: str, max_results: int, ydl_opts: dict
+) -> list[dict]:
+    search_url = (
+        f"ytsearch{max_results}:{query}"
+        if source == "youtube"
+        else f"scsearch{max_results}:{query}"
+    )
     flat_opts = {**ydl_opts, "extract_flat": True}
     with yt_dlp.YoutubeDL(flat_opts) as ydl:
         result = ydl.extract_info(search_url, download=False)
@@ -70,7 +76,11 @@ async def fetch_info(url: str, settings: Settings) -> dict:
     raw = await asyncio.to_thread(_extract_blocking, url, opts)
     parsed = _parse_info(raw)
 
-    metadata = {k: v for k, v in parsed.items() if k not in ("stream_url", "stream_url_expires_at")}
+    metadata = {
+        k: v
+        for k, v in parsed.items()
+        if k not in ("stream_url", "stream_url_expires_at")
+    }
     cache.set_metadata(url, metadata)
     if parsed.get("stream_url"):
         cache.set_stream_url(url, parsed["stream_url"])
@@ -98,16 +108,16 @@ async def fetch_playlist(url: str, settings: Settings) -> list[dict]:
     if not entries:
         track = _entry_to_playlist_track(raw)
         return [track] if track["webpage_url"] else []
-    return [
-        t
-        for e in entries
-        if (t := _entry_to_playlist_track(e))["webpage_url"]
-    ]
+    return [t for e in entries if (t := _entry_to_playlist_track(e))["webpage_url"]]
 
 
-async def search(query: str, source: str, max_results: int, settings: Settings) -> list[dict]:
+async def search(
+    query: str, source: str, max_results: int, settings: Settings
+) -> list[dict]:
     opts = _make_ydl_opts(settings, flat=True)
-    entries = await asyncio.to_thread(_search_blocking, query, source, max_results, opts)
+    entries = await asyncio.to_thread(
+        _search_blocking, query, source, max_results, opts
+    )
     return [
         {
             "title": e.get("title", ""),
