@@ -67,7 +67,7 @@ Supported sources are `youtube` and `soundcloud`.
 
 * [Docker](https://docs.docker.com/get-started/get-docker/) and Docker Compose.
 
-Running without Docker requires Python 3.12 or newer, and FFmpeg available in the system PATH.
+Running without Docker requires Python 3.12, [uv](https://docs.astral.sh/uv/), and FFmpeg available in the system PATH. On Windows, install uv with `winget install --id astral-sh.uv`.
 
 ## Setup
 
@@ -86,17 +86,15 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-The script creates a `.venv` virtual environment if one does not already exist. It installs all dependencies and copies `.env.template` to `.env` on the first run. You must edit `.env` and set `DISCORD_API_SECRET` before starting the API.
+The script runs `uv sync`, which creates the `.venv` virtual environment if needed and installs the package with its locked dependencies. It copies `.env.template` to `.env` on the first run. You must edit `.env` and set `DISCORD_API_SECRET` before starting the API.
 
 If you prefer to perform the setup manually, follow these steps:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
+uv sync
 cp .env.template .env
 # Edit .env and set DISCORD_API_SECRET and other values as needed.
-uvicorn media_api.main:app --port 8001
+uv run uvicorn media_api.main:app --port 8001
 ```
 
 ### Docker
@@ -145,7 +143,9 @@ discord-api-media/
 ├── tests/
 ├── Dockerfile
 ├── docker-compose.yml
-├── pyproject.toml
+├── pyproject.toml      # Project metadata and dependencies.
+├── uv.lock             # Locked dependency versions.
+├── ruff.toml           # Lint and format settings on top of the shared baseline.
 ├── setup.bat           # Windows setup script.
 ├── setup.sh            # macOS and Linux setup script.
 └── .env.template       # Template for environment variables.
@@ -154,6 +154,8 @@ discord-api-media/
 ## Running tests
 
 ```bash
-pip install -e ".[dev]"
-pytest
+uv run pytest
 ```
+
+Run every lint and format check with `uvx pre-commit run --all-files`, or install the hooks once with `uvx pre-commit install` so they run on each commit.
+The coding, prose, and commit conventions are documented in [discord-dev-standards](https://github.com/Lempki/discord-dev-standards).
