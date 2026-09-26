@@ -16,7 +16,9 @@ The shared conventions live in [discord-dev-standards](https://github.com/Lempki
 ## Layout
 
 * `src/media_api/main.py` defines the app, the lifespan, and the routes.
-* `src/media_api/config.py` reads settings from the environment with pydantic-settings.
+* `src/media_api/config.py` adds this service's settings to `ServiceSettings`.
+* `src/media_api/service.py` holds `ServiceSettings`, which validates the shared secret, and `service_version()`, which reads the version from pyproject.toml.
+* `src/media_api/logging_config.py` turns every log record, including uvicorn's, into one JSON line.
 * `src/media_api/auth.py` holds the bearer token dependency that protects every route except `/health`.
 * `src/media_api/models.py` holds the request and response models.
 * `src/media_api/extractor.py` wraps yt-dlp with `asyncio.to_thread` and TTL caching.
@@ -25,5 +27,7 @@ The shared conventions live in [discord-dev-standards](https://github.com/Lempki
 
 ## Template origin
 
-* `src/media_api/auth.py`, `.dockerignore`, `setup.sh`, `setup.bat`, `.pre-commit-config.yaml`, and `.github/dependabot.yml` are kept identical to the template, per its `.template-manifest.toml`.
+* `src/media_api/auth.py`, `src/media_api/logging_config.py`, `src/media_api/service.py`, `.dockerignore`, `setup.sh`, `setup.bat`, `.pre-commit-config.yaml`, and `.github/dependabot.yml` are kept identical to the template, per its `.template-manifest.toml`.
 * Check `dev-standards template-check --template <path-to-discord-api-template> --diff` before hand-editing one of those files.
+* Keep the version only in pyproject.toml, and keep `SERVICE` in main.py equal to the project name there.
+* `uv run mypy src` must pass in strict mode, because CI runs it.

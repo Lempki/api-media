@@ -9,9 +9,11 @@ This is a REST API that centralizes media metadata resolution for Discord bots. 
 | `GET` | `/media/info` | Resolve a URL or search query to full track metadata including a playable stream URL. |
 | `GET` | `/media/playlist` | Expand a YouTube playlist or Spotify album/playlist into an ordered list of tracks. |
 | `POST` | `/media/search` | Search for tracks and return a list of results. Results do not include stream URLs; call `/media/info` after the user selects a result. |
-| `GET` | `/health` | Returns the service name and version. Used for uptime monitoring. |
+| `GET` | `/health` | Returns the service name and version. Used for uptime monitoring and as the Docker image's health check. |
 
 All endpoints except `/health` require a bearer token in the `Authorization` header.
+A request without the header or with a wrong token gets `401 Unauthorized` with a `WWW-Authenticate: Bearer` header.
+Tokens are compared in constant time.
 
 ### GET /media/info
 
@@ -109,6 +111,7 @@ Alternatively, you can run the API as a Docker container.
    ```
 
 The container runs on port `8000` internally. Docker Compose maps it to port `8001` on the host.
+The image has a health check that calls `/health`, so `docker ps` shows whether the container is healthy.
 
 ## Configuration
 
@@ -116,8 +119,8 @@ All configuration is read from environment variables or from a `.env` file in th
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `DISCORD_API_SECRET` | Yes | — | Shared bearer token. All Discord bots must send this value in the `Authorization` header. |
-| `LOG_LEVEL` | No | `INFO` | Log verbosity. Accepts standard Python logging levels. |
+| `DISCORD_API_SECRET` | Yes | None | Shared bearer token of at least 16 characters. All Discord bots must send this value in the `Authorization` header. The service refuses to start with a placeholder or short secret. Generate one with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
+| `LOG_LEVEL` | No | `INFO` | Log verbosity. Accepts `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`. Every log line, including uvicorn's access log, is one JSON object. |
 | `METADATA_CACHE_TTL` | No | `3600` | How long to cache track metadata in seconds. |
 | `STREAM_URL_CACHE_TTL` | No | `300` | How long to cache stream URLs in seconds. YouTube URLs expire, so keep this value short. |
 | `YDL_FORMAT` | No | `bestaudio/best` | The yt-dlp format selector used when extracting stream URLs. |
@@ -131,7 +134,9 @@ All configuration is read from environment variables or from a `.env` file in th
 discord-api-media/
 ├── src/media_api/
 │   ├── main.py         # FastAPI application and route definitions.
-│   ├── config.py       # Environment variable reader.
+│   ├── config.py       # This service's settings on top of ServiceSettings.
+│   ├── service.py      # Shared settings, secret validation, and the version lookup.
+│   ├── logging_config.py  # JSON logging for every logger, including uvicorn's.
 │   ├── auth.py         # Bearer token dependency.
 │   ├── models.py       # Pydantic request and response models.
 │   ├── extractor.py    # yt-dlp wrapper with asyncio.to_thread and TTL caching.
