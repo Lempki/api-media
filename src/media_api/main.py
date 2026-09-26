@@ -1,5 +1,6 @@
-import logging
-import logging.config
+"""The FastAPI application, its lifespan, and its routes."""
+
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
@@ -9,6 +10,7 @@ from . import cache
 from .auth import require_auth
 from .config import Settings, get_settings
 from .extractor import fetch_info, fetch_playlist, search
+from .logging_config import configure_logging
 from .models import (
     HealthResponse,
     MediaInfo,
@@ -18,55 +20,44 @@ from .models import (
     SearchResponse,
     SearchResult,
 )
+from .service import service_version
 from .sources import spotify
+
+# The service name is also the project name in pyproject.toml, which the version is read from.
+SERVICE = "discord-api-media"
+VERSION = service_version(SERVICE)
+
+# Logging is set up on import, before uvicorn prints its startup lines, so every line is JSON.
+configure_logging(get_settings().log_level)
 
 
 def _is_youtube_playlist(url: str) -> bool:
     return ("youtube.com" in url or "youtu.be" in url) and "list=" in url
 
 
-def _configure_logging(level: str) -> None:
-    logging.config.dictConfig(
-        {
-            "version": 1,
-            "formatters": {
-                "json": {
-                    "format": (
-                        '{"time":"%(asctime)s","level":"%(levelname)s",'
-                        '"name":"%(name)s","message":"%(message)s"}'
-                    )
-                }
-            },
-            "handlers": {
-                "console": {"class": "logging.StreamHandler", "formatter": "json"}
-            },
-            "root": {"level": level, "handlers": ["console"]},
-        }
-    )
-
-
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Configures the caches before the first request."""
     settings = get_settings()
-    _configure_logging(settings.log_level)
     cache.configure(settings.metadata_cache_ttl, settings.stream_url_cache_ttl)
     yield
 
 
-app = FastAPI(title="discord-api-media", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title=SERVICE, version=VERSION, lifespan=lifespan)
 
 
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
-    return HealthResponse(status="ok", service="discord-api-media", version="1.0.0")
+    """Reports that the service is up. It needs no token, so monitors and Docker can call it."""
+    return HealthResponse(status="ok", service=SERVICE, version=VERSION)
 
 
 @app.get("/media/info", response_model=MediaInfo, dependencies=[Depends(require_auth)])
 async def media_info(
     settings: Annotated[Settings, Depends(get_settings)],
-    url: str | None = Query(default=None),
-    query: str | None = Query(default=None),
-    source: str = Query(default="youtube"),
+    url: Annotated[str | None, Query()] = None,
+    query: Annotated[str | None, Query()] = None,
+    source: Annotated[str, Query()] = "youtube",
 ) -> MediaInfo:
     if url and query:
         raise HTTPException(
@@ -85,7 +76,9 @@ async def media_info(
             else:
                 info = await fetch_info(url, settings)
         else:
-            results = await search(query, source, 1, settings)  # type: ignore[arg-type]
+            # The checks above leave a non-empty query whenever url is empty.
+            assert query is not None
+            results = await search(query, source, 1, settings)
             if not results:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND, detail="No results found."
@@ -124,7 +117,7 @@ async def media_search(
 )
 async def media_playlist(
     settings: Annotated[Settings, Depends(get_settings)],
-    url: str = Query(...),
+    url: Annotated[str, Query()],
 ) -> PlaylistResponse:
     """Expand a playlist or album URL into an ordered list of tracks.
 
