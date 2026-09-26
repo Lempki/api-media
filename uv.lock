@@ -298,7 +298,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.3" },
     { name = "spotipy", specifier = ">=2.24" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
+    { name = "uvicorn", extras = ["standard"], specifier = ">=0.53.0" },
     { name = "yt-dlp", specifier = ">=2024.11.18" },
 ]
 
