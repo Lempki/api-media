@@ -15,9 +15,13 @@ All endpoints except `/health` require a bearer token in the `Authorization` hea
 A request without the header or with a wrong token gets `401 Unauthorized` with a `WWW-Authenticate: Bearer` header.
 Tokens are compared in constant time.
 
+When yt-dlp or Spotify fails, the endpoint answers `502 Bad Gateway`.
+Its detail is always the same text, "The media source could not be reached."
+The error itself goes only to the server log, so no internal detail reaches the caller.
+
 ### GET /media/info
 
-Accepts either a `url` parameter or a `query` + `source` pair. Providing both is an error. Supported URL types:
+Accepts either a `url` parameter or a `query` + `source` pair. Providing both is an error. The `source` parameter accepts `youtube`, which is the default, or `soundcloud`. Any other value gets `422 Unprocessable Content`. A query without any search results gets `404 Not Found`. Supported URL types:
 
 * YouTube video URLs.
 * SoundCloud track URLs.
@@ -33,7 +37,7 @@ Spotify URLs are resolved to a matching YouTube video using the Spotify track na
 
 Response fields include `title`, `duration_seconds`, `duration_formatted`, `uploader`, `thumbnail_url`, `webpage_url`, `stream_url`, `stream_url_expires_at`, and `is_live`.
 
-Stream URLs from YouTube expire after a short time. The API caches them for five minutes. Metadata is cached for one hour.
+Stream URLs from YouTube expire after a short time. `stream_url_expires_at` is the moment the returned stream URL stops working. The API reads it from the `expire` parameter that YouTube stream URLs carry and never sets it more than `STREAM_URL_CACHE_TTL` seconds ahead, which is five minutes by default. A cached stream URL is served until 30 seconds before it expires. After that, the next request extracts the track again. Metadata is cached for one hour.
 
 ### GET /media/playlist
 
@@ -63,13 +67,13 @@ For Spotify collections, each track is resolved to a YouTube `webpage_url` by se
 }
 ```
 
-Supported sources are `youtube` and `soundcloud`.
+Supported sources are `youtube` and `soundcloud`. `max_results` must be between 1 and 25, and `MAX_SEARCH_RESULTS` caps it further. Any other source or an out-of-range `max_results` gets `422 Unprocessable Content`.
 
 ## Prerequisites
 
 * [Docker](https://docs.docker.com/get-started/get-docker/) and Docker Compose.
 
-Running without Docker requires Python 3.12, [uv](https://docs.astral.sh/uv/), and FFmpeg available in the system PATH. On Windows, install uv with `winget install --id astral-sh.uv`.
+Running without Docker requires Python 3.12, [uv](https://docs.astral.sh/uv/), FFmpeg, and [Deno](https://deno.com/) available in the system PATH. yt-dlp runs YouTube's player JavaScript with Deno, so YouTube extraction fails or finds fewer formats without it. On Windows, install uv with `winget install --id astral-sh.uv` and Deno with `winget install --id DenoLand.Deno`. The Docker image already includes Deno.
 
 ## Setup
 
@@ -121,10 +125,10 @@ All configuration is read from environment variables or from a `.env` file in th
 |---|---|---|---|
 | `DISCORD_API_SECRET` | Yes | None | Shared bearer token of at least 16 characters. All Discord bots must send this value in the `Authorization` header. The service refuses to start with a placeholder or short secret. Generate one with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
 | `LOG_LEVEL` | No | `INFO` | Log verbosity. Accepts `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`. Every log line, including uvicorn's access log, is one JSON object. |
-| `METADATA_CACHE_TTL` | No | `3600` | How long to cache track metadata in seconds. |
-| `STREAM_URL_CACHE_TTL` | No | `300` | How long to cache stream URLs in seconds. YouTube URLs expire, so keep this value short. |
+| `METADATA_CACHE_TTL` | No | `3600` | How long to cache track metadata in seconds. Must be greater than 0. |
+| `STREAM_URL_CACHE_TTL` | No | `300` | The longest time a stream URL stays cached, in seconds. A URL that expires sooner is dropped 30 seconds before its own expiry. Must be greater than 0. |
 | `YDL_FORMAT` | No | `bestaudio/best` | The yt-dlp format selector used when extracting stream URLs. |
-| `MAX_SEARCH_RESULTS` | No | `10` | Upper limit on results returned by `/media/search`. |
+| `MAX_SEARCH_RESULTS` | No | `10` | Upper limit on results returned by `/media/search`. Must be at least 1. |
 | `SPOTIFY_CLIENT_ID` | No | — | Spotify application Client ID. Create an app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard). Required for accurate Spotify track, album, and playlist resolution. |
 | `SPOTIFY_CLIENT_SECRET` | No | — | Spotify application Client Secret. Required alongside `SPOTIFY_CLIENT_ID`. |
 
@@ -142,8 +146,6 @@ discord-api-media/
 │   ├── extractor.py    # yt-dlp wrapper with asyncio.to_thread and TTL caching.
 │   ├── cache.py        # Metadata and stream URL TTL caches.
 │   └── sources/
-│       ├── youtube.py      # YouTube helper.
-│       ├── soundcloud.py   # SoundCloud helper.
 │       └── spotify.py      # Spotify resolver.
 ├── tests/
 ├── Dockerfile

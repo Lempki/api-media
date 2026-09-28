@@ -9,21 +9,22 @@ The shared conventions live in [discord-dev-standards](https://github.com/Lempki
 
 * `uv sync` installs the package and its locked dependencies into `.venv`.
 * `uv run uvicorn media_api.main:app --reload` starts the API on port 8000. It reads its settings from `.env`.
+* Running the API outside Docker needs Deno on PATH, because yt-dlp runs YouTube's player JavaScript with it. The Docker image copies Deno in from a named stage.
 * `uv run pytest` runs the tests.
 * `uvx pre-commit run --all-files` runs every lint and format hook.
 * `docker-compose up --build` runs the API in a container, published on host port 8001.
 
 ## Layout
 
-* `src/media_api/main.py` defines the app, the lifespan, and the routes.
+* `src/media_api/main.py` defines the app, the lifespan, and the routes. A failed upstream call answers 502 with a fixed detail, and the exception goes only to the log through `logger.exception`.
 * `src/media_api/config.py` adds this service's settings to `ServiceSettings`.
 * `src/media_api/service.py` holds `ServiceSettings`, which validates the shared secret, and `service_version()`, which reads the version from pyproject.toml.
 * `src/media_api/logging_config.py` turns every log record, including uvicorn's, into one JSON line.
 * `src/media_api/auth.py` holds the bearer token dependency that protects every route except `/health`.
-* `src/media_api/models.py` holds the request and response models.
-* `src/media_api/extractor.py` wraps yt-dlp with `asyncio.to_thread` and TTL caching.
-* `src/media_api/cache.py` holds the metadata and stream URL TTL caches.
-* `src/media_api/sources/` holds the YouTube, SoundCloud, and Spotify source helpers.
+* `src/media_api/models.py` holds the request and response models. `source` accepts only `youtube` and `soundcloud`, and `max_results` must be between 1 and 25.
+* `src/media_api/extractor.py` wraps yt-dlp with `asyncio.to_thread` and TTL caching. It rounds every duration to whole seconds and always returns a fresh dict.
+* `src/media_api/cache.py` holds the metadata and stream URL TTL caches. A stream entry keeps its URL together with its expiry, which comes from the URL's `expire` parameter and is capped by `STREAM_URL_CACHE_TTL`. An entry counts as expired 30 seconds early, and the track is then extracted again.
+* `src/media_api/sources/spotify.py` resolves Spotify tracks, albums, and playlists to YouTube tracks. It checks URLs by host and reuses one Spotify client per credential pair.
 
 ## Template origin
 
