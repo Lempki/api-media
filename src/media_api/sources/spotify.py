@@ -1,21 +1,38 @@
 import asyncio
 import re
+from functools import lru_cache
 from typing import Any
+from urllib.parse import urlsplit
 
 import spotipy
+from spotipy.cache_handler import MemoryCacheHandler
 from spotipy.oauth2 import SpotifyClientCredentials
 
 from ..config import Settings
 from ..extractor import fetch_info, search
 from ..models import PlaylistTrack
 
-_TRACK_RE = re.compile(r"spotify\.com/track/([^/?#]+)")
-_ALBUM_RE = re.compile(r"spotify\.com/album/([^/?#]+)")
-_PLAYLIST_RE = re.compile(r"spotify\.com/playlist/([^/?#]+)")
+# Links shared from a localized client carry a market segment such as /intl-fi/ before the type.
+_MARKET = r"(?:intl-[a-z]{2}(?:-[a-z]{2})?/)?"
+_TRACK_RE = re.compile(rf"spotify\.com/{_MARKET}track/([^/?#]+)")
+_ALBUM_RE = re.compile(rf"spotify\.com/{_MARKET}album/([^/?#]+)")
+_PLAYLIST_RE = re.compile(rf"spotify\.com/{_MARKET}playlist/([^/?#]+)")
+_SPOTIFY_HOST = "open.spotify.com"
 
 
 def is_spotify_url(url: str) -> bool:
-    return "spotify.com" in url
+    """Tells whether a URL points to the Spotify web player.
+
+    Args:
+        url: The URL to check.
+
+    Returns:
+        True when the URL's host is open.spotify.com.
+    """
+    try:
+        return urlsplit(url).hostname == _SPOTIFY_HOST
+    except ValueError:
+        return False
 
 
 def is_spotify_collection(url: str) -> bool:
@@ -27,10 +44,20 @@ def _get_client(settings: Settings) -> spotipy.Spotify:
         raise ValueError(
             "SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET must be set to use Spotify features."
         )
+    return _client_for(settings.spotify_client_id, settings.spotify_client_secret)
+
+
+@lru_cache(maxsize=4)
+def _client_for(client_id: str, client_secret: str) -> spotipy.Spotify:
+    """Builds one Spotify client per credential pair and reuses it.
+
+    The access token is kept in memory, so the client asks for a new one only when it expires.
+    """
     return spotipy.Spotify(
         auth_manager=SpotifyClientCredentials(
-            client_id=settings.spotify_client_id,
-            client_secret=settings.spotify_client_secret,
+            client_id=client_id,
+            client_secret=client_secret,
+            cache_handler=MemoryCacheHandler(),
         )
     )
 

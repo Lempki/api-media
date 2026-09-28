@@ -1,6 +1,10 @@
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+# The sites that /media/info and /media/search can search.
+Source = Literal["youtube", "soundcloud"]
 
 
 class MediaInfo(BaseModel):
@@ -18,8 +22,8 @@ class MediaInfo(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str
-    source: str = "youtube"
-    max_results: int = 5
+    source: Source = "youtube"
+    max_results: int = Field(default=5, ge=1, le=25)
 
 
 class SearchResult(BaseModel):

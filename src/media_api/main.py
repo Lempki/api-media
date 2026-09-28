@@ -1,8 +1,10 @@
 """The FastAPI application, its lifespan, and its routes."""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
+from urllib.parse import parse_qs, urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 
@@ -19,6 +21,7 @@ from .models import (
     SearchRequest,
     SearchResponse,
     SearchResult,
+    Source,
 )
 from .service import service_version
 from .sources import spotify
@@ -30,9 +33,47 @@ VERSION = service_version(SERVICE)
 # Logging is set up on import, before uvicorn prints its startup lines, so every line is JSON.
 configure_logging(get_settings().log_level)
 
+logger = logging.getLogger(__name__)
+
+_YOUTUBE_HOSTS = frozenset(
+    {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"}
+)
+
+# A 502 answer carries this fixed detail. The exception itself goes only to the server log.
+_UPSTREAM_ERROR = "The media source could not be reached."
+
 
 def _is_youtube_playlist(url: str) -> bool:
-    return ("youtube.com" in url or "youtu.be" in url) and "list=" in url
+    """Tells whether a URL is a YouTube URL that names a playlist.
+
+    Args:
+        url: The URL to check.
+
+    Returns:
+        True when the host is a YouTube host and the query has a non-empty list parameter.
+    """
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    return parts.hostname in _YOUTUBE_HOSTS and bool(parse_qs(parts.query).get("list"))
+
+
+def _upstream_failure(route: str) -> HTTPException:
+    """Logs the exception being handled and builds the 502 answer for it.
+
+    Call it only inside an except block, so the log record carries the traceback.
+
+    Args:
+        route: The route that failed, for the log message.
+
+    Returns:
+        A 502 HTTPException whose detail does not reveal the exception.
+    """
+    logger.exception("The media source failed while serving %s.", route)
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY, detail=_UPSTREAM_ERROR
+    )
 
 
 @asynccontextmanager
@@ -57,8 +98,9 @@ async def media_info(
     settings: Annotated[Settings, Depends(get_settings)],
     url: Annotated[str | None, Query()] = None,
     query: Annotated[str | None, Query()] = None,
-    source: Annotated[str, Query()] = "youtube",
+    source: Annotated[Source, Query()] = "youtube",
 ) -> MediaInfo:
+    """Resolve a URL or a search query to track metadata and a playable stream URL."""
     if url and query:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -84,10 +126,10 @@ async def media_info(
                     status_code=status.HTTP_404_NOT_FOUND, detail="No results found."
                 )
             info = await fetch_info(results[0]["webpage_url"], settings)
+    except HTTPException:
+        raise
     except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
-        ) from exc
+        raise _upstream_failure("/media/info") from exc
 
     return MediaInfo(**info)
 
@@ -99,13 +141,12 @@ async def media_search(
     body: SearchRequest,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> SearchResponse:
+    """Search a source for tracks. The results carry no stream URLs."""
     max_results = min(body.max_results, settings.max_search_results)
     try:
         entries = await search(body.query, body.source, max_results, settings)
     except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
-        ) from exc
+        raise _upstream_failure("/media/search") from exc
 
     return SearchResponse(results=[SearchResult(**e) for e in entries])
 
@@ -144,8 +185,6 @@ async def media_playlist(
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
-        ) from exc
+        raise _upstream_failure("/media/playlist") from exc
 
     return PlaylistResponse(tracks=tracks)
