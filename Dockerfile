@@ -1,6 +1,9 @@
 # The uv stage only supplies the uv binary. A named stage lets Dependabot keep its tag current.
 FROM ghcr.io/astral-sh/uv:0.12.19 AS uv
 
+# yt-dlp runs YouTube's JavaScript with Deno, and naming the stage lets Dependabot keep it current.
+FROM denoland/deno:bin-2.9.7 AS deno
+
 FROM python:3.12-slim AS builder
 COPY --from=uv /uv /usr/local/bin/uv
 ENV UV_COMPILE_BYTECODE=1 \
@@ -18,6 +21,7 @@ RUN useradd --create-home appuser
 WORKDIR /app
 # The virtual environment holds the installed package, so the runtime image needs no source tree.
 COPY --from=builder /app/.venv /app/.venv
+COPY --from=deno /deno /usr/local/bin/deno
 ENV PATH="/app/.venv/bin:$PATH"
 USER appuser
 EXPOSE 8000
