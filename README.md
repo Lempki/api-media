@@ -33,7 +33,7 @@ GET /media/info?url=https://open.spotify.com/track/4PTG3Z6ehGkBFwjybzWkR8?si=dcb
 GET /media/info?query=rick+astley&source=youtube
 ```
 
-Spotify URLs are resolved to a matching YouTube video using the Spotify track name and artist. Accurate Spotify matching requires `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`. Without them, the API falls back to an ID-based search.
+Spotify URLs are resolved to a matching YouTube video using the Spotify track name and artist. That needs `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`. Without them, the API reads the track title from Spotify's public oEmbed endpoint and searches for the title alone, which can match a cover or a remix instead.
 
 Response fields include `source`, `title`, `duration_seconds`, `duration_formatted`, `uploader`, `thumbnail_url`, `webpage_url`, `stream_url`, `stream_url_expires_at`, and `is_live`.
 
@@ -55,7 +55,7 @@ GET /media/playlist?url=https://open.spotify.com/playlist/19RcUUR4b9oxhcREqD8Xoq
 
 Returns a `tracks` array. Each item contains `title`, `webpage_url`, `duration_seconds`, `duration_formatted`, and `thumbnail_url`. Stream URLs are intentionally omitted. Call `/media/info?url=<webpage_url>` per track at play time to avoid serving expired URLs from a stale queue.
 
-For Spotify collections, each track is resolved to a YouTube `webpage_url` by searching YouTube for the track name and artist. Up to five searches run in parallel. Spotify albums and playlists require `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`, and without them the request gets `502 Bad Gateway`.
+For Spotify collections, each track is resolved to a YouTube `webpage_url` by searching YouTube for the track name and artist. Up to five searches run in parallel. Spotify albums and playlists require `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET`. Without them, the request gets `503 Service Unavailable`, and the detail says that Spotify albums and playlists are not configured on this server.
 
 Any other URL gets `400 Bad Request`. Spotify track URLs belong in `/media/info` instead.
 
@@ -130,7 +130,7 @@ All configuration is read from environment variables or from a `.env` file in th
 | `DISCORD_API_SECRET` | Yes | None | Shared bearer token of at least 16 characters. All Discord bots must send this value in the `Authorization` header. The service refuses to start with a placeholder or short secret. Generate one with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
 | `LOG_LEVEL` | No | `INFO` | Log verbosity. Accepts `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`. Every log line, including uvicorn's access log, is one JSON object. |
 | `METADATA_CACHE_TTL` | No | `3600` | How long to cache track metadata in seconds. Must be greater than 0. |
-| `STREAM_URL_CACHE_TTL` | No | `300` | The longest time a stream URL stays cached, in seconds. A URL that expires sooner is dropped 30 seconds before its own expiry. Must be greater than 0. |
+| `STREAM_URL_CACHE_TTL` | No | `300` | The longest time a stream URL stays cached, in seconds. A URL that expires sooner is dropped 30 seconds before its own expiry. Must be at least 60. |
 | `YDL_FORMAT` | No | `bestaudio/best` | The yt-dlp format selector used when extracting stream URLs. |
 | `MAX_SEARCH_RESULTS` | No | `10` | Upper limit on results returned by `/media/search`. Must be at least 1. |
 | `SPOTIFY_CLIENT_ID` | No | Not set | Spotify application Client ID. Create an app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard). Required for Spotify albums and playlists, and for accurate Spotify track matching. |
