@@ -3,7 +3,8 @@
 A FastAPI service that resolves YouTube, SoundCloud, and Spotify metadata and stream URLs for bots and other clients.
 It wraps yt-dlp and spotipy so clients can call this API instead of bundling those dependencies themselves.
 It is based on the [api-template](https://github.com/Lempki/api-template) repository.
-The shared conventions live in [discord-dev-standards](https://github.com/Lempki/discord-dev-standards), and its README is the rulebook for code, prose, and commits.
+The shared conventions live in [dev-standards](https://github.com/Lempki/dev-standards), and its README is the rulebook for code, prose, commits, and engineering guidelines.
+Read it before changing code. When the repositories are cloned side by side, the local copy is `../dev-standards/README.md`.
 
 ## Commands
 
