@@ -1,3 +1,9 @@
+"""Resolves Spotify tracks, albums, and playlists to YouTube tracks.
+
+Spotify serves no audio to third parties.
+Each Spotify track is therefore matched to a YouTube video by its name and first artist.
+"""
+
 import asyncio
 import re
 from functools import lru_cache
@@ -36,6 +42,14 @@ def is_spotify_url(url: str) -> bool:
 
 
 def is_spotify_collection(url: str) -> bool:
+    """Tells whether a Spotify URL names an album or a playlist.
+
+    Args:
+        url: The URL to check.
+
+    Returns:
+        True when the path holds an album or playlist segment.
+    """
     return bool(_ALBUM_RE.search(url) or _PLAYLIST_RE.search(url))
 
 
@@ -63,7 +77,21 @@ def _client_for(client_id: str, client_secret: str) -> spotipy.Spotify:
 
 
 async def get_info(url: str, settings: Settings) -> dict[str, Any]:
-    """Resolve a Spotify track URL to a MediaInfo dict via YouTube search."""
+    """Resolves a Spotify track URL to MediaInfo fields through a YouTube search.
+
+    With Spotify credentials, the search uses the track name and first artist.
+    Without them, it searches for the track ID, which rarely finds the right video.
+
+    Args:
+        url: The Spotify track URL.
+        settings: The settings that hold the Spotify credentials and the yt-dlp format.
+
+    Returns:
+        A new dict with the MediaInfo fields of the first YouTube match.
+
+    Raises:
+        ValueError: When the URL holds no track ID or the search finds nothing.
+    """
     if settings.spotify_client_id and settings.spotify_client_secret:
         m = _TRACK_RE.search(url)
         if not m:
@@ -72,7 +100,7 @@ async def get_info(url: str, settings: Settings) -> dict[str, Any]:
         track = await asyncio.to_thread(sp.track, m.group(1))
         query = f"{track['name']} {track['artists'][0]['name']}"
     else:
-        # No Spotify credentials — fall back to searching by track ID (poor quality)
+        # Without Spotify credentials, the search falls back to the track ID, which matches poorly.
         track_id = url.rstrip("/").split("/")[-1].split("?")[0]
         query = f"spotify track {track_id}"
 
@@ -104,7 +132,20 @@ async def _resolve_one(
 
 
 async def get_collection(url: str, settings: Settings) -> list[PlaylistTrack]:
-    """Resolve a Spotify album or playlist URL to a list of PlaylistTrack items."""
+    """Resolves a Spotify album or playlist URL to YouTube tracks.
+
+    Every page of the collection is read, and up to five YouTube searches run at once.
+
+    Args:
+        url: The Spotify album or playlist URL.
+        settings: The settings that hold the Spotify credentials and the yt-dlp format.
+
+    Returns:
+        The matched tracks in collection order, leaving out tracks without a match.
+
+    Raises:
+        ValueError: When the Spotify credentials are missing or the URL is not an album or playlist.
+    """
     sp = _get_client(settings)
     raw_tracks: list[tuple[str, str, int | None]] = []
 

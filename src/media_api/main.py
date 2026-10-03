@@ -100,7 +100,7 @@ async def media_info(
     query: Annotated[str | None, Query()] = None,
     source: Annotated[Source, Query()] = "youtube",
 ) -> MediaInfo:
-    """Resolve a URL or a search query to track metadata and a playable stream URL."""
+    """Resolves a URL or a search query to track metadata and a playable stream URL."""
     if url and query:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -141,7 +141,7 @@ async def media_search(
     body: SearchRequest,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> SearchResponse:
-    """Search a source for tracks. The results carry no stream URLs."""
+    """Searches a source for tracks. The results carry no stream URLs."""
     max_results = min(body.max_results, settings.max_search_results)
     try:
         entries = await search(body.query, body.source, max_results, settings)
@@ -160,11 +160,11 @@ async def media_playlist(
     settings: Annotated[Settings, Depends(get_settings)],
     url: Annotated[str, Query()],
 ) -> PlaylistResponse:
-    """Expand a playlist or album URL into an ordered list of tracks.
+    """Expands a playlist or album URL into an ordered list of tracks.
 
-    Accepts YouTube playlist URLs and Spotify album/playlist URLs.
-    Stream URLs are intentionally omitted; call ``/media/info`` per track at
-    play time so that expired URLs are never served from a stale queue.
+    It accepts YouTube playlist URLs and Spotify album and playlist URLs.
+    The tracks carry no stream URLs, because a stream URL in a long queue expires before its turn.
+    Callers fetch ``/media/info`` for each track at play time instead.
     """
     try:
         if spotify.is_spotify_url(url):
