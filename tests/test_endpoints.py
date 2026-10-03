@@ -85,6 +85,18 @@ def test_playlist_rejects_spotify_track() -> None:
     assert r.status_code == 400
 
 
+def test_spotify_collection_without_credentials_is_503() -> None:
+    # The test settings carry no Spotify credentials.
+    r = client.get(
+        "/media/playlist?url=https://open.spotify.com/album/6eUW0wxWtzkFdaEFsTJto6",
+        headers=AUTH,
+    )
+    assert r.status_code == 503
+    assert r.json()["detail"] == (
+        "Spotify albums and playlists are not configured on this server."
+    )
+
+
 def test_playlist_rejects_plain_youtube_url() -> None:
     r = client.get(f"/media/playlist?url={YOUTUBE_VIDEO}", headers=AUTH)
     assert r.status_code == 400

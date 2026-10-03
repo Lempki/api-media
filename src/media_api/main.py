@@ -173,6 +173,12 @@ async def media_playlist(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Use /media/info for Spotify track URLs.",
                 )
+            if not (settings.spotify_client_id and settings.spotify_client_secret):
+                # This is a configuration gap on this server, not a failure of Spotify.
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Spotify albums and playlists are not configured on this server.",
+                )
             tracks = await spotify.get_collection(url, settings)
         elif _is_youtube_playlist(url):
             entries = await fetch_playlist(url, settings)
