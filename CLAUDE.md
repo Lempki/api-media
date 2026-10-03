@@ -12,7 +12,7 @@ The shared conventions live in [discord-dev-standards](https://github.com/Lempki
 * Running the API outside Docker needs Deno on PATH, because yt-dlp runs YouTube's player JavaScript with it. The Docker image copies Deno in from a named stage.
 * `uv run pytest` runs the tests.
 * `uvx pre-commit run --all-files` runs every lint and format hook.
-* `docker-compose up --build` runs the API in a container, published on host port 8001.
+* `docker compose up --build` runs the API in a container, published on host port 8001.
 
 ## Layout
 
@@ -28,7 +28,7 @@ The shared conventions live in [discord-dev-standards](https://github.com/Lempki
 
 ## Template origin
 
-* `src/media_api/auth.py`, `src/media_api/logging_config.py`, `src/media_api/service.py`, `.dockerignore`, `setup.sh`, `setup.bat`, `.pre-commit-config.yaml`, and `.github/dependabot.yml` are kept identical to the template, per its `.template-manifest.toml`.
+* `src/media_api/auth.py`, `src/media_api/logging_config.py`, `src/media_api/service.py`, `tests/test_shared.py`, `.dockerignore`, `setup.sh`, `setup.bat`, `.pre-commit-config.yaml`, and `.github/dependabot.yml` are kept identical to the template, per its `.template-manifest.toml`.
 * Check `dev-standards template-check --template <path-to-discord-api-template> --diff` before hand-editing one of those files.
 * Keep the version only in pyproject.toml, and keep `SERVICE` in main.py equal to the project name there.
 * `uv run mypy src` must pass in strict mode, because CI runs it.
