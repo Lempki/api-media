@@ -27,7 +27,7 @@ from .service import service_version
 from .sources import spotify
 
 # The service name is also the project name in pyproject.toml, which the version is read from.
-SERVICE = "discord-api-media"
+SERVICE = "api-media"
 VERSION = service_version(SERVICE)
 
 # Logging is set up on import, before uvicorn prints its startup lines, so every line is JSON.

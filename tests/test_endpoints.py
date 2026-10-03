@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 SECRET = "test-secret-0123456789"
-os.environ["DISCORD_API_SECRET"] = SECRET
+os.environ["API_SECRET"] = SECRET
 
 from media_api import extractor  # noqa: E402
 from media_api.config import Settings  # noqa: E402
@@ -26,13 +26,13 @@ def test_health_needs_no_token() -> None:
     assert r.status_code == 200
     assert r.json() == {
         "status": "ok",
-        "service": "discord-api-media",
+        "service": "api-media",
         "version": VERSION,
     }
 
 
 def test_version_comes_from_package_metadata() -> None:
-    assert VERSION == service_version("discord-api-media") != "0.0.0"
+    assert VERSION == service_version("api-media") != "0.0.0"
 
 
 @pytest.mark.parametrize(
@@ -234,4 +234,4 @@ def test_duration_seconds(value: object, expected: int | None) -> None:
 )
 def test_settings_refuse_out_of_range_values(field: str, value: int) -> None:
     with pytest.raises(ValueError, match=field):
-        Settings.model_validate({"discord_api_secret": SECRET, field: value})
+        Settings.model_validate({"api_secret": SECRET, field: value})

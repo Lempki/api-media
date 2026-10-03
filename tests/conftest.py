@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 SECRET = "test-secret-0123456789"
-os.environ["DISCORD_API_SECRET"] = SECRET
+os.environ["API_SECRET"] = SECRET
 
 from media_api import cache, extractor  # noqa: E402
 from media_api.config import Settings, get_settings  # noqa: E402
@@ -57,7 +57,7 @@ class FakeExtraction:
 def settings() -> Iterator[Settings]:
     """Empties the caches and serves fixed settings instead of the ones from .env."""
     fixed = Settings(
-        discord_api_secret=SECRET,
+        api_secret=SECRET,
         metadata_cache_ttl=3600,
         stream_url_cache_ttl=STREAM_TTL,
         _env_file=None,

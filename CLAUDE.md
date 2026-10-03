@@ -1,8 +1,8 @@
-# discord-api-media
+# api-media
 
-A FastAPI service that resolves YouTube, SoundCloud, and Spotify metadata and stream URLs for Discord bots.
-It wraps yt-dlp and spotipy so bots can call this API instead of bundling those dependencies themselves.
-It is based on the [discord-api-template](https://github.com/Lempki/discord-api-template) repository.
+A FastAPI service that resolves YouTube, SoundCloud, and Spotify metadata and stream URLs for bots and other clients.
+It wraps yt-dlp and spotipy so clients can call this API instead of bundling those dependencies themselves.
+It is based on the [api-template](https://github.com/Lempki/api-template) repository.
 The shared conventions live in [discord-dev-standards](https://github.com/Lempki/discord-dev-standards), and its README is the rulebook for code, prose, and commits.
 
 ## Commands
@@ -29,6 +29,6 @@ The shared conventions live in [discord-dev-standards](https://github.com/Lempki
 ## Template origin
 
 * `src/media_api/auth.py`, `src/media_api/logging_config.py`, `src/media_api/service.py`, `tests/test_shared.py`, `.dockerignore`, `setup.sh`, `setup.bat`, `.pre-commit-config.yaml`, and `.github/dependabot.yml` are kept identical to the template, per its `.template-manifest.toml`.
-* Check `dev-standards template-check --template <path-to-discord-api-template> --diff` before hand-editing one of those files.
+* Check `dev-standards template-check --template <path-to-api-template> --diff` before hand-editing one of those files.
 * Keep the version only in pyproject.toml, and keep `SERVICE` in main.py equal to the project name there.
 * `uv run mypy src` must pass in strict mode, because CI runs it.

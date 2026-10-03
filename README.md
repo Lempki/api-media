@@ -1,6 +1,6 @@
-# discord-api-media
+# api-media
 
-This is a REST API that centralizes media metadata resolution for Discord bots. It wraps [yt-dlp](https://github.com/yt-dlp/yt-dlp) to provide track information, stream URLs, and search results for YouTube, SoundCloud, and Spotify over HTTP. Bots call this API instead of bundling yt-dlp themselves, keeping their dependencies minimal and allowing media support to be updated in a single place. This project is based on the [discord-api-template](https://github.com/Lempki/discord-api-template) repository, which provides the core architecture.
+This is a REST API that centralizes media metadata resolution for bots and other clients. It wraps [yt-dlp](https://github.com/yt-dlp/yt-dlp) to provide track information, stream URLs, and search results for YouTube, SoundCloud, and Spotify over HTTP. Clients call this API instead of bundling yt-dlp themselves, keeping their dependencies minimal and allowing media support to be updated in a single place. This project is based on the [api-template](https://github.com/Lempki/api-template) repository, which provides the core architecture.
 
 ## Endpoints
 
@@ -94,14 +94,14 @@ chmod +x setup.sh
 ./setup.sh
 ```
 
-The script runs `uv sync`, which creates the `.venv` virtual environment if needed and installs the package with its locked dependencies. It copies `.env.template` to `.env` on the first run. You must edit `.env` and set `DISCORD_API_SECRET` before starting the API.
+The script runs `uv sync`, which creates the `.venv` virtual environment if needed and installs the package with its locked dependencies. It copies `.env.template` to `.env` on the first run. You must edit `.env` and set `API_SECRET` before starting the API.
 
 If you prefer to perform the setup manually, follow these steps:
 
 ```bash
 uv sync
 cp .env.template .env
-# Edit .env and set DISCORD_API_SECRET and other values as needed.
+# Edit .env and set API_SECRET and other values as needed.
 uv run uvicorn media_api.main:app --port 8001
 ```
 
@@ -109,7 +109,7 @@ uv run uvicorn media_api.main:app --port 8001
 
 Alternatively, you can run the API as a Docker container.
 
-1. Copy `.env.template` to `.env` and set `DISCORD_API_SECRET`.
+1. Copy `.env.template` to `.env` and set `API_SECRET`.
 2. Build and start the container:
 
    ```
@@ -127,7 +127,7 @@ All configuration is read from environment variables or from a `.env` file in th
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `DISCORD_API_SECRET` | Yes | None | Shared bearer token of at least 16 characters. All Discord bots must send this value in the `Authorization` header. The service refuses to start with a placeholder or short secret. Generate one with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
+| `API_SECRET` | Yes | None | Shared bearer token of at least 16 characters. Every client must send this value in the `Authorization` header. The service refuses to start with a placeholder or short secret. Generate one with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. |
 | `LOG_LEVEL` | No | `INFO` | Log verbosity. Accepts `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`. Every log line, including uvicorn's access log, is one JSON object. |
 | `METADATA_CACHE_TTL` | No | `3600` | How long to cache track metadata in seconds. Must be greater than 0. |
 | `STREAM_URL_CACHE_TTL` | No | `300` | The longest time a stream URL stays cached, in seconds. A URL that expires sooner is dropped 30 seconds before its own expiry. Must be at least 60. |
@@ -139,7 +139,7 @@ All configuration is read from environment variables or from a `.env` file in th
 ## Project structure
 
 ```
-discord-api-media/
+api-media/
 ├── src/media_api/
 │   ├── main.py         # FastAPI application and route definitions.
 │   ├── config.py       # This service's settings on top of ServiceSettings.
