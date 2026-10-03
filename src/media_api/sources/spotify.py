@@ -2,13 +2,16 @@
 
 Spotify serves no audio to third parties.
 Each Spotify track is therefore matched to a YouTube video by its name and first artist.
+Without API credentials, a track is matched by the title from Spotify's public oEmbed endpoint.
 """
 
 import asyncio
+import json
 import re
+import urllib.request
 from functools import lru_cache
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import spotipy
 from spotipy.cache_handler import MemoryCacheHandler
@@ -24,6 +27,8 @@ _TRACK_RE = re.compile(rf"spotify\.com/{_MARKET}track/([^/?#]+)")
 _ALBUM_RE = re.compile(rf"spotify\.com/{_MARKET}album/([^/?#]+)")
 _PLAYLIST_RE = re.compile(rf"spotify\.com/{_MARKET}playlist/([^/?#]+)")
 _SPOTIFY_HOST = "open.spotify.com"
+_OEMBED_URL = "https://open.spotify.com/oembed"
+_OEMBED_TIMEOUT = 10.0
 
 
 def is_spotify_url(url: str) -> bool:
@@ -53,6 +58,30 @@ def is_spotify_collection(url: str) -> bool:
     return bool(_ALBUM_RE.search(url) or _PLAYLIST_RE.search(url))
 
 
+def oembed_title(url: str) -> str:
+    """Reads a Spotify item's title from the public oEmbed endpoint.
+
+    The endpoint needs no credentials. For a track, the title is the track name without the artist.
+
+    Args:
+        url: The Spotify URL.
+
+    Returns:
+        The title.
+
+    Raises:
+        ValueError: When the endpoint answers without a title.
+        OSError: When the endpoint cannot be reached.
+    """
+    request_url = f"{_OEMBED_URL}?{urlencode({'url': url})}"
+    with urllib.request.urlopen(request_url, timeout=_OEMBED_TIMEOUT) as response:
+        data = json.load(response)
+    title = data.get("title") if isinstance(data, dict) else None
+    if not isinstance(title, str) or not title.strip():
+        raise ValueError(f"Spotify's oEmbed endpoint returned no title for {url}")
+    return title.strip()
+
+
 def _get_client(settings: Settings) -> spotipy.Spotify:
     if not settings.spotify_client_id or not settings.spotify_client_secret:
         raise ValueError(
@@ -80,7 +109,7 @@ async def get_info(url: str, settings: Settings) -> dict[str, Any]:
     """Resolves a Spotify track URL to MediaInfo fields through a YouTube search.
 
     With Spotify credentials, the search uses the track name and first artist.
-    Without them, it searches for the track ID, which rarely finds the right video.
+    Without them, it uses the track title from Spotify's oEmbed endpoint.
 
     Args:
         url: The Spotify track URL.
@@ -92,17 +121,15 @@ async def get_info(url: str, settings: Settings) -> dict[str, Any]:
     Raises:
         ValueError: When the URL holds no track ID or the search finds nothing.
     """
+    m = _TRACK_RE.search(url)
+    if not m:
+        raise ValueError(f"Could not parse Spotify track URL: {url}")
     if settings.spotify_client_id and settings.spotify_client_secret:
-        m = _TRACK_RE.search(url)
-        if not m:
-            raise ValueError(f"Could not parse Spotify track URL: {url}")
         sp = _get_client(settings)
         track = await asyncio.to_thread(sp.track, m.group(1))
         query = f"{track['name']} {track['artists'][0]['name']}"
     else:
-        # Without Spotify credentials, the search falls back to the track ID, which matches poorly.
-        track_id = url.rstrip("/").split("/")[-1].split("?")[0]
-        query = f"spotify track {track_id}"
+        query = await asyncio.to_thread(oembed_title, url)
 
     results = await search(query, "youtube", 1, settings)
     if not results:
