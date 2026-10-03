@@ -122,3 +122,11 @@ async def test_fetch_info_returns_a_fresh_dict(
 )
 def test_stream_url_expiry(url: str, expected: datetime) -> None:
     assert stream_url_expiry(url, 300, NOW) == expected
+
+
+@pytest.mark.parametrize("ttl", [1, 30, 59])
+def test_stream_ttl_under_a_minute_is_refused(ttl: int) -> None:
+    # Within 30 seconds of expiry an entry counts as expired, so a short lifetime caches nothing.
+    with pytest.raises(ValueError, match="stream_url_cache_ttl"):
+        Settings(discord_api_secret=SECRET, stream_url_cache_ttl=ttl)
+    Settings(discord_api_secret=SECRET, stream_url_cache_ttl=60)

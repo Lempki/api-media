@@ -18,6 +18,7 @@ class Settings(ServiceSettings):
         metadata_cache_ttl: How long track metadata stays cached, in seconds.
         stream_url_cache_ttl: The longest time a stream URL stays cached, in seconds.
             A URL that carries an earlier expiry leaves the cache at that expiry instead.
+            It must be at least 60.
         ydl_format: The yt-dlp format selector used when extracting stream URLs.
         max_search_results: The upper limit on results that /media/search returns.
         spotify_client_id: The Spotify application client ID, if Spotify support is set up.
@@ -25,7 +26,9 @@ class Settings(ServiceSettings):
     """
 
     metadata_cache_ttl: int = Field(default=3600, gt=0)
-    stream_url_cache_ttl: int = Field(default=300, gt=0)
+    # A cached stream URL is dropped 30 seconds before it expires.
+    # A lifetime under a minute would leave almost no time to serve it from the cache.
+    stream_url_cache_ttl: int = Field(default=300, ge=60)
     ydl_format: str = "bestaudio/best"
     max_search_results: int = Field(default=10, ge=1)
     spotify_client_id: str | None = None
