@@ -16,3 +16,7 @@ dist/
 *.db-wal
 .claude/settings.local.json
 # <<< dev-standards managed block.
+
+# Cookies files are credentials. Only the empty file that keeps the folder in Git is tracked.
+cookies/*
+!cookies/.gitkeep

@@ -10,4 +10,7 @@ services:
     environment:
       # Compose reads the secret from .env or the shell and stops with this message when it is missing.
       API_SECRET: ${API_SECRET:?Set API_SECRET in .env. The README shows how to generate one.}
+    volumes:
+      # The image's working directory is /app, so YDL_COOKIES_FILE=cookies/youtube.txt works in and out of Docker.
+      - ./cookies:/app/cookies:ro
     restart: unless-stopped

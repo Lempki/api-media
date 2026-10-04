@@ -1,8 +1,9 @@
 """This service's settings, read from the environment or from .env."""
 
 from functools import lru_cache
+from typing import Any
 
-from pydantic import Field
+from pydantic import Field, FilePath, field_validator
 
 from .service import ServiceSettings
 
@@ -20,6 +21,8 @@ class Settings(ServiceSettings):
             A URL that carries an earlier expiry leaves the cache at that expiry instead.
             It must be at least 60.
         ydl_format: The yt-dlp format selector used when extracting stream URLs.
+        ydl_cookies_file: A Netscape-format cookies file that yt-dlp sends with its requests.
+            None sends no cookies. The file must exist when the service starts.
         max_search_results: The upper limit on results that /media/search returns.
         spotify_client_id: The Spotify application client ID, if Spotify support is set up.
         spotify_client_secret: The Spotify application client secret, if Spotify support is set up.
@@ -30,9 +33,18 @@ class Settings(ServiceSettings):
     # A lifetime under a minute would leave almost no time to serve it from the cache.
     stream_url_cache_ttl: int = Field(default=300, ge=60)
     ydl_format: str = "bestaudio/best"
+    ydl_cookies_file: FilePath | None = None
     max_search_results: int = Field(default=10, ge=1)
     spotify_client_id: str | None = None
     spotify_client_secret: str | None = None
+
+    @field_validator("ydl_cookies_file", mode="before")
+    @classmethod
+    def _blank_means_no_cookies(cls, path: Any) -> Any:
+        # An empty YDL_COOKIES_FILE= line in .env reads as "", which means the same as unset.
+        if isinstance(path, str) and not path.strip():
+            return None
+        return path
 
 
 @lru_cache

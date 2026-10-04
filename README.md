@@ -119,7 +119,8 @@ Alternatively, you can run the API as a Docker container.
 The container runs on port `8000` internally. Docker Compose maps it to port `8001` on the host.
 The image has a health check that calls `/health`, so `docker ps` shows whether the container is healthy.
 The service keeps no state.
-Its caches live in memory and start empty after every restart, so the container needs no volume.
+Its caches live in memory and start empty after every restart, so the container needs no data volume.
+Its only mount is the read-only `cookies` folder.
 
 ## Configuration
 
@@ -132,9 +133,31 @@ All configuration is read from environment variables or from a `.env` file in th
 | `METADATA_CACHE_TTL` | No | `3600` | How long to cache track metadata in seconds. Must be greater than 0. |
 | `STREAM_URL_CACHE_TTL` | No | `300` | The longest time a stream URL stays cached, in seconds. A URL that expires sooner is dropped 30 seconds before its own expiry. Must be at least 60. |
 | `YDL_FORMAT` | No | `bestaudio/best` | The yt-dlp format selector used when extracting stream URLs. |
+| `YDL_COOKIES_FILE` | No | Not set | Path to a cookies file in Netscape format that yt-dlp sends with its requests. Use it when YouTube answers with "Sign in to confirm you're not a bot". The file must exist when the service starts. [YouTube cookies](#youtube-cookies) explains how to export it. |
 | `MAX_SEARCH_RESULTS` | No | `10` | Upper limit on results returned by `/media/search`. Must be at least 1. |
 | `SPOTIFY_CLIENT_ID` | No | Not set | Spotify application Client ID. Create an app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard). Required for Spotify albums and playlists, and for accurate Spotify track matching. |
 | `SPOTIFY_CLIENT_SECRET` | No | Not set | Spotify application Client Secret. Required alongside `SPOTIFY_CLIENT_ID`. |
+
+### YouTube cookies
+
+YouTube sometimes refuses requests from an address it does not trust, most often a server in a data center.
+yt-dlp then fails with "Sign in to confirm you're not a bot".
+Sending the cookies of a signed-in YouTube session usually gets past this check.
+
+A cookies file gives full access to the Google account it came from, so treat it like a password.
+Use a separate account made for this, because Google may restrict accounts that it sees being used by yt-dlp.
+
+1. Open a private browser window and sign in to YouTube with that account.
+2. In the same tab, go to `https://www.youtube.com/robots.txt`. The session then stays on a page that never refreshes its cookies.
+3. Export the cookies for `youtube.com` with a browser extension that writes the Netscape `cookies.txt` format, such as Get cookies.txt LOCALLY. Save the file as `cookies/youtube.txt` in this repository.
+4. Close the private window without signing out. Signing out would invalidate the exported cookies.
+5. Add `YDL_COOKIES_FILE=cookies/youtube.txt` to `.env` and restart the service.
+
+Git ignores everything in the `cookies` folder except the file that keeps the folder in the repository.
+Docker Compose mounts the folder read-only at `/app/cookies`, which is the same relative path the setting uses outside Docker.
+The service never changes the file.
+Each extraction works on a private copy, because yt-dlp rewrites its cookies file after every use.
+When YouTube asks to sign in again, the cookies have expired, so export a new file.
 
 ## Project structure
 
@@ -152,6 +175,7 @@ api-media/
 │   └── sources/
 │       └── spotify.py      # Spotify resolver.
 ├── tests/
+├── cookies/            # Optional YouTube cookies file. Git ignores its contents.
 ├── Dockerfile
 ├── docker-compose.yml
 ├── pyproject.toml      # Project metadata and dependencies.

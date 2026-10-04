@@ -2,7 +2,12 @@
 
 import asyncio
 import math
+import shutil
+import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any, TypedDict
 from urllib.parse import parse_qs, urlsplit
 
@@ -23,13 +28,42 @@ class TrackSummary(TypedDict):
 
 
 def _make_ydl_opts(settings: Settings, flat: bool = False) -> dict[str, Any]:
-    return {
+    opts: dict[str, Any] = {
         "format": settings.ydl_format,
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
         "extract_flat": flat,
     }
+    if settings.ydl_cookies_file is not None:
+        opts["cookiefile"] = str(settings.ydl_cookies_file)
+    return opts
+
+
+@contextmanager
+def _private_cookie_file(ydl_opts: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    """Gives one extraction its own copy of the configured cookies file.
+
+    yt-dlp rewrites its cookies file whenever a YoutubeDL instance closes.
+    Concurrent extractions sharing one file would read each other's half-written copies.
+    A cookies file mounted read-only would also make every extraction fail on close.
+    The configured file is therefore only ever read.
+
+    Args:
+        ydl_opts: The yt-dlp options, which name the cookies file under "cookiefile".
+
+    Yields:
+        The options unchanged when no cookies file is set.
+        Otherwise a copy of them that points to a temporary copy of the file.
+    """
+    cookie_file = ydl_opts.get("cookiefile")
+    if cookie_file is None:
+        yield ydl_opts
+        return
+    with tempfile.TemporaryDirectory(prefix="api-media-cookies-") as directory:
+        private_copy = Path(directory) / "cookies.txt"
+        shutil.copyfile(cookie_file, private_copy)
+        yield {**ydl_opts, "cookiefile": str(private_copy)}
 
 
 def duration_seconds(value: Any) -> int | None:
@@ -108,7 +142,7 @@ def _with_stream(
 
 
 def _extract_blocking(url: str, ydl_opts: dict[str, Any]) -> dict[str, Any]:
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    with _private_cookie_file(ydl_opts) as opts, yt_dlp.YoutubeDL(opts) as ydl:
         info: dict[str, Any] = ydl.extract_info(url, download=False)
     return info
 
@@ -122,7 +156,7 @@ def _search_blocking(
         else f"scsearch{max_results}:{query}"
     )
     flat_opts = {**ydl_opts, "extract_flat": True}
-    with yt_dlp.YoutubeDL(flat_opts) as ydl:
+    with _private_cookie_file(flat_opts) as opts, yt_dlp.YoutubeDL(opts) as ydl:
         result: dict[str, Any] | None = ydl.extract_info(search_url, download=False)
     entries: list[dict[str, Any]] = result.get("entries", []) if result else []
     return entries
