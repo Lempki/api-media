@@ -30,7 +30,7 @@ Read it before changing code. When the repositories are cloned side by side, the
 
 ## Template origin
 
-* `src/media_api/auth.py`, `src/media_api/logging_config.py`, `src/media_api/service.py`, `tests/test_shared.py`, `.dockerignore`, `setup.sh`, `setup.bat`, `scripts/bootstrap.py`, `tests/test_bootstrap.py`, `.pre-commit-config.yaml`, and `.github/dependabot.yml` are kept identical to the template, per its `.template-manifest.toml`.
+* `src/media_api/auth.py`, `src/media_api/logging_config.py`, `src/media_api/service.py`, `tests/test_shared.py`, `.dockerignore`, `setup.sh`, `setup.bat`, `scripts/bootstrap.py`, `tests/test_bootstrap.py`, `run.bat`, `run.sh`, `scripts/run.py`, `tests/test_run.py`, `.pre-commit-config.yaml`, and `.github/dependabot.yml` are kept identical to the template, per its `.template-manifest.toml`.
 * Check `dev-standards template-check --template <path-to-api-template> --diff` before hand-editing one of those files.
 * Keep the version only in pyproject.toml, and keep `SERVICE` in main.py equal to the project name there.
 * `uv run mypy src` must pass in strict mode, because CI runs it.
