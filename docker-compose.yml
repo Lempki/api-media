@@ -4,6 +4,7 @@ name: api-media
 
 services:
   media:
+    image: ghcr.io/lempki/api-media:latest
     build: .
     ports:
       - "8001:8000"

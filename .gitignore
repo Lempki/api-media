@@ -20,3 +20,7 @@ dist/
 # Cookies files are credentials. Only the empty file that keeps the folder in Git is tracked.
 cookies/*
 !cookies/.gitkeep
+
+# What run update leaves in a downloaded release: the previous version and the update log.
+.update/
+update.log

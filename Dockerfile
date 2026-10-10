@@ -21,6 +21,9 @@ RUN useradd --create-home appuser
 WORKDIR /app
 # The virtual environment holds the installed package, so the runtime image needs no source tree.
 COPY --from=builder /app/.venv /app/.venv
+# A downloaded release updates its run, setup, and compose files from these copies.
+COPY .env.template README.md docker-compose.yml run.bat run.sh setup.bat setup.sh ./
+COPY scripts/ scripts/
 COPY --from=deno /deno /usr/local/bin/deno
 ENV PATH="/app/.venv/bin:$PATH"
 USER appuser
