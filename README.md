@@ -7,6 +7,7 @@ This is a REST API that centralizes media metadata resolution for bots and other
 | Method | Path | Description |
 |---|---|---|
 | `GET` | `/media/info` | Resolve a URL or search query to full track metadata including a playable stream URL. |
+| `GET` | `/media/stream` | Stream a track's audio, downloaded by yt-dlp, for playing it live. |
 | `GET` | `/media/playlist` | Expand a YouTube playlist or Spotify album/playlist into an ordered list of tracks. |
 | `POST` | `/media/search` | Search for tracks and return a list of results. Results do not include stream URLs. Call `/media/info` after the user selects a result. |
 | `GET` | `/health` | Returns the service name and version. Used for uptime monitoring and as the Docker image's health check. |
@@ -38,6 +39,18 @@ Spotify URLs are resolved to a matching YouTube video using the Spotify track na
 Response fields include `source`, `title`, `duration_seconds`, `duration_formatted`, `uploader`, `thumbnail_url`, `webpage_url`, `stream_url`, `stream_url_expires_at`, and `is_live`.
 
 Stream URLs from YouTube expire after a short time. `stream_url_expires_at` is the moment the returned stream URL stops working. The API reads it from the `expire` parameter that YouTube stream URLs carry and never sets it more than `STREAM_URL_CACHE_TTL` seconds ahead, which is five minutes by default. A cached stream URL is served until 30 seconds before it expires. After that, the next request extracts the track again. Metadata is cached for one hour by default.
+
+### GET /media/stream
+
+Accepts a `url` parameter with a track's page URL, such as the `webpage_url` that `/media/info` returns. The answer is the track's audio as it arrives, in the format that `YDL_FORMAT` selects, usually WebM with Opus for YouTube.
+
+```
+GET /media/stream?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ
+```
+
+Use it instead of `stream_url` to play a track live. Playing a YouTube `stream_url` directly holds one connection open for the whole track, and YouTube resets such connections partway through or refuses them. The API runs yt-dlp's downloader instead, which fetches the audio in ranges, sends the headers YouTube expects, and retries. It also sends the cookies file when `YDL_COOKIES_FILE` is set. When the caller closes the connection, such as on a skip, the download stops.
+
+A track that yields no audio, such as an unavailable video, gets `502 Bad Gateway` before any audio is sent. A Spotify URL or a URL that is not HTTP or HTTPS gets `400 Bad Request`, because only the resolved page URL can be streamed. The stream cannot be resumed partway, so a client that loses the connection starts the track again.
 
 ### GET /media/playlist
 
@@ -201,6 +214,7 @@ api-media/
 │   ├── models.py         # Pydantic request and response models.
 │   ├── extractor.py      # yt-dlp wrapper with asyncio.to_thread and TTL caching.
 │   ├── cache.py          # Metadata and stream URL TTL caches.
+│   ├── streamer.py       # Streams audio through yt-dlp's downloader.
 │   └── sources/
 │       └── spotify.py    # Spotify resolver.
 ├── tests/

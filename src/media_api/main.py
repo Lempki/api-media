@@ -7,8 +7,9 @@ from typing import Annotated
 from urllib.parse import parse_qs, urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 
-from . import cache
+from . import cache, streamer
 from .auth import require_auth
 from .config import Settings, get_settings
 from .extractor import fetch_info, fetch_playlist, search
@@ -132,6 +133,33 @@ async def media_info(
         raise _upstream_failure("/media/info") from exc
 
     return MediaInfo(**info)
+
+
+@app.get(
+    "/media/stream",
+    response_class=StreamingResponse,
+    dependencies=[Depends(require_auth)],
+)
+async def media_stream(
+    settings: Annotated[Settings, Depends(get_settings)],
+    url: Annotated[str, Query()],
+) -> StreamingResponse:
+    """Streams a track's audio, downloaded by yt-dlp, as it arrives.
+
+    Clients that play audio live should use this instead of the stream URL from /media/info.
+    YouTube resets or refuses a stream URL that is held open for a whole track.
+    yt-dlp downloads in ranges with the headers YouTube expects and retries.
+    """
+    if not url.startswith(("http://", "https://")) or spotify.is_spotify_url(url):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Stream the webpage_url that /media/info returns for the track.",
+        )
+    try:
+        audio = await streamer.open_audio(url, settings)
+    except streamer.StreamError as exc:
+        raise _upstream_failure("/media/stream") from exc
+    return StreamingResponse(audio, media_type="application/octet-stream")
 
 
 @app.post(

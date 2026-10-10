@@ -41,8 +41,9 @@ def test_version_comes_from_package_metadata() -> None:
         ("GET", f"/media/info?url={YOUTUBE_VIDEO}", None),
         ("POST", "/media/search", {"query": "test"}),
         ("GET", f"/media/playlist?url={YOUTUBE_PLAYLIST}", None),
+        ("GET", f"/media/stream?url={YOUTUBE_VIDEO}", None),
     ],
-    ids=["info", "search", "playlist"],
+    ids=["info", "search", "playlist", "stream"],
 )
 @pytest.mark.parametrize(
     "headers",

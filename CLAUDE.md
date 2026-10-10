@@ -25,6 +25,7 @@ Read it before changing code. When the repositories are cloned side by side, the
 * `src/media_api/models.py` holds the request and response models. `source` accepts only `youtube` and `soundcloud`, and `max_results` must be between 1 and 25.
 * `src/media_api/extractor.py` wraps yt-dlp with `asyncio.to_thread` and TTL caching. It rounds every duration to whole seconds and always returns a fresh dict.
 * yt-dlp rewrites its cookies file whenever a `YoutubeDL` closes, so every extraction hands it a temporary copy of `YDL_COOKIES_FILE`. Never pass the configured path to yt-dlp directly.
+* `src/media_api/streamer.py` runs yt-dlp's downloader as a subprocess for `/media/stream` and relays its audio. Closing the iterator kills the process, which is how a skip stops the download.
 * `src/media_api/cache.py` holds the metadata and stream URL TTL caches. A stream entry keeps its URL together with its expiry, which comes from the URL's `expire` parameter and is capped by `STREAM_URL_CACHE_TTL`. An entry counts as expired 30 seconds early, and the track is then extracted again.
 * `src/media_api/sources/spotify.py` resolves Spotify tracks, albums, and playlists to YouTube tracks. It checks URLs by host and reuses one Spotify client per credential pair.
 
