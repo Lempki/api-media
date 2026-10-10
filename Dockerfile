@@ -1,5 +1,5 @@
 # The uv stage only supplies the uv binary. A named stage lets Dependabot keep its tag current.
-FROM ghcr.io/astral-sh/uv:0.12.23 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.0 AS uv
 
 # yt-dlp runs YouTube's JavaScript with Deno, and naming the stage lets Dependabot keep it current.
 FROM denoland/deno:bin-2.9.7 AS deno
