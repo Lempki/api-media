@@ -50,7 +50,7 @@ GET /media/stream?url=https://www.youtube.com/watch?v=dQw4w9WgXcQ
 
 Use it instead of `stream_url` to play a track live. Playing a YouTube `stream_url` directly holds one connection open for the whole track, and YouTube resets such connections partway through or refuses them. The API runs yt-dlp's downloader instead, which fetches the audio in ranges, sends the headers YouTube expects, and retries. It also sends the cookies file when `YDL_COOKIES_FILE` is set. When the caller closes the connection, such as on a skip, the download stops.
 
-A track that yields no audio, such as an unavailable video, gets `502 Bad Gateway` before any audio is sent. A Spotify URL or a URL that is not HTTP or HTTPS gets `400 Bad Request`, because only the resolved page URL can be streamed. The stream cannot be resumed partway, so a client that loses the connection starts the track again.
+YouTube now and then refuses a download link with `403 Forbidden`, so a refused download starts again with a fresh link, up to three tries. A track that still yields no audio, such as an unavailable video, gets `502 Bad Gateway` before any audio is sent. A Spotify URL or a URL that is not HTTP or HTTPS gets `400 Bad Request`, because only the resolved page URL can be streamed. The stream cannot be resumed partway, so a client that loses the connection starts the track again.
 
 ### GET /media/playlist
 

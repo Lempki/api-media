@@ -49,7 +49,7 @@ def test_stream_relays_all_audio(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_track_without_audio_is_502_without_the_ytdlp_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_ytdlp(
+    commands = fake_ytdlp(
         monkeypatch,
         "import sys; sys.stderr.write('ERROR: Video unavailable'); sys.exit(1)",
     )
@@ -58,6 +58,45 @@ def test_track_without_audio_is_502_without_the_ytdlp_message(
 
     assert r.status_code == 502
     assert "unavailable" not in r.text
+    # Another try cannot make an unavailable video available.
+    assert len(commands) == 1
+
+
+def refused_until(counter: Path, failures: int) -> str:
+    """A fake yt-dlp that YouTube refuses with 403 for the first runs, then sends audio."""
+    return (
+        "import pathlib, sys\n"
+        f"counter = pathlib.Path({str(counter)!r})\n"
+        "runs = int(counter.read_text()) if counter.exists() else 0\n"
+        "counter.write_text(str(runs + 1))\n"
+        f"if runs < {failures}:\n"
+        "    sys.stderr.write('ERROR: unable to download video data: HTTP Error 403: Forbidden')\n"
+        "    sys.exit(1)\n"
+        "sys.stdout.buffer.write(b'audio')\n"
+    )
+
+
+def test_refused_download_is_tried_again(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    commands = fake_ytdlp(monkeypatch, refused_until(tmp_path / "runs", failures=2))
+
+    r = client.get("/media/stream", params={"url": VIDEO}, headers=AUTH)
+
+    assert r.status_code == 200
+    assert r.content == b"audio"
+    assert len(commands) == streamer.STREAM_ATTEMPTS
+
+
+def test_download_refused_every_time_is_502(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    commands = fake_ytdlp(monkeypatch, refused_until(tmp_path / "runs", failures=99))
+
+    r = client.get("/media/stream", params={"url": VIDEO}, headers=AUTH)
+
+    assert r.status_code == 502
+    assert len(commands) == streamer.STREAM_ATTEMPTS
 
 
 @pytest.mark.parametrize(

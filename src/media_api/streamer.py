@@ -9,6 +9,7 @@ The audio is relayed to the client as it arrives, so playback starts without wai
 import asyncio
 import contextlib
 import logging
+import re
 import shutil
 import sys
 import tempfile
@@ -17,7 +18,13 @@ from pathlib import Path
 
 from .config import Settings
 
-__all__ = ["CHUNK_SIZE", "StreamError", "open_audio", "ytdlp_command"]
+__all__ = [
+    "CHUNK_SIZE",
+    "STREAM_ATTEMPTS",
+    "StreamError",
+    "open_audio",
+    "ytdlp_command",
+]
 
 log = logging.getLogger(__name__)
 
@@ -25,6 +32,13 @@ CHUNK_SIZE = 64 * 1024
 
 # yt-dlp's last error lines explain a failed track, and nothing older is needed.
 _STDERR_LIMIT = 2000
+
+# YouTube now and then refuses a download link with 403 Forbidden, and a fresh link usually works.
+# A new yt-dlp run gets a fresh link, so a track gets this many tries before it counts as failed.
+STREAM_ATTEMPTS = 3
+
+# The errors that a new try can fix, unlike an unavailable or private video.
+_TRANSIENT_ERROR = re.compile(r"HTTP Error (403|5\d\d)")
 
 
 class StreamError(Exception):
@@ -96,6 +110,8 @@ async def _read_tail(stream: asyncio.StreamReader | None) -> str:
 async def open_audio(url: str, settings: Settings) -> AsyncIterator[bytes]:
     """Starts yt-dlp for a track and waits for its first audio.
 
+    A run that YouTube refuses before any audio is tried again, up to STREAM_ATTEMPTS runs.
+
     Args:
         url: The track's page URL.
         settings: The settings that hold the format selector and the cookies file.
@@ -107,6 +123,20 @@ async def open_audio(url: str, settings: Settings) -> AsyncIterator[bytes]:
     Raises:
         StreamError: yt-dlp ended without audio, such as for an unavailable video.
     """
+    for attempt in range(1, STREAM_ATTEMPTS):
+        try:
+            return await _start(url, settings)
+        except StreamError as error:
+            if not _TRANSIENT_ERROR.search(str(error)):
+                raise
+            log.warning(
+                f"Try {attempt} to stream {url} was refused, so it starts again: {error}"
+            )
+    return await _start(url, settings)
+
+
+async def _start(url: str, settings: Settings) -> AsyncIterator[bytes]:
+    """Runs yt-dlp once and waits for its first audio, as open_audio describes."""
     workdir, cookie_copy = await asyncio.to_thread(
         _make_workdir, settings.ydl_cookies_file
     )
