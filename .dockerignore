@@ -14,3 +14,4 @@ dist/
 tests/
 .update/
 update.log
+backups/

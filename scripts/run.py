@@ -61,6 +61,8 @@ ACTIONS = {
     "status": "Show whether each container runs, its version, and automatic updates.",
     "logs": "Follow the logs. Press Ctrl+C to stop following.",
     "update": "Install the newest release, or pull the latest code in a Git clone.",
+    "backup": "Copy the bot's database into the backups folder. Every update does it too.",
+    "restore": "Put a backup of the bot's database back.",
     "schedule": f"Install new releases automatically every night at {UPDATE_HOUR:02d}:00.",
     "unschedule": "Stop installing new releases automatically.",
     "local": "Run the project in this window without Docker. Press Ctrl+C to stop it.",
@@ -99,6 +101,45 @@ with tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as archive:
     for name in sys.argv[1:]:
         if pathlib.Path(name).exists():
             archive.add(name, filter=lambda info: None if "__pycache__" in info.name else info)
+"""
+
+# Backups of a bot's database go into this folder next to the run script.
+BACKUP_FOLDER = "backups"
+BACKUP_PREFIX = "bot-"
+
+# Every nightly update makes a backup, so this keeps the last week.
+BACKUPS_KEPT = 7
+
+# Every SQLite database file starts with these bytes.
+SQLITE_HEADER = b"SQLite format 3\x00"
+
+# Runs in a copy of the bot's container and writes a consistent copy of the database to stdout.
+# It writes nothing when the bot has no database yet.
+_BACKUP_DATABASE = """\
+import os, pathlib, sqlite3, sys, tempfile
+path = pathlib.Path(os.environ.get("DATABASE_PATH") or "data/bot.db")
+if path.exists():
+    with tempfile.TemporaryDirectory() as folder:
+        copy = pathlib.Path(folder) / "copy.db"
+        source, target = sqlite3.connect(path), sqlite3.connect(copy)
+        source.backup(target)
+        target.close()
+        source.close()
+        sys.stdout.buffer.write(copy.read_bytes())
+"""
+
+# Runs in a copy of the bot's container and replaces the database with the backup on stdin.
+# The write-ahead log files belong to the replaced database, so they go too.
+_RESTORE_DATABASE = """\
+import os, pathlib, sys
+path = pathlib.Path(os.environ.get("DATABASE_PATH") or "data/bot.db")
+path.parent.mkdir(parents=True, exist_ok=True)
+data = sys.stdin.buffer.read()
+for suffix in ("-wal", "-shm"):
+    pathlib.Path(f"{path}{suffix}").unlink(missing_ok=True)
+temporary = path.with_name(path.name + ".restoring")
+temporary.write_bytes(data)
+temporary.replace(path)
 """
 
 # The label in which each published image carries its release version.
@@ -816,6 +857,10 @@ def update_release(project: Project, report: Report) -> bool:
     print(f"  Started at {time.strftime('%Y-%m-%d %H:%M')}.")
     if not (check_setup(project, report) and check_docker(report)):
         return False
+    if project.is_bot:
+        # A copy from before the update protects the data from a release that damages it.
+        section("Backing up")
+        backup_database(project, report)
     section("Downloading the newest release")
     images = service_images(project.compose, project.root)
     if not images:
@@ -896,6 +941,197 @@ def update_release(project: Project, report: Report) -> bool:
     report.ok("Updated to the newest release.")
     show_result(project, True)
     return True
+
+
+def backup_command(project: Project, script: str) -> list[str]:
+    """Builds the command that runs a Python script in a one-off copy of the bot's container.
+
+    The copy mounts the same database volume, whether or not the bot itself runs.
+    """
+    return [
+        *project.compose,
+        "run",
+        "--rm",
+        "--no-deps",
+        "-T",
+        "--entrypoint",
+        "python",
+        "bot",
+        "-c",
+        script,
+    ]
+
+
+def backup_name(now: time.struct_time) -> str:
+    """Names a backup after the moment it was taken, so that names sort from oldest to newest."""
+    return time.strftime(f"{BACKUP_PREFIX}%Y-%m-%d-%H%M%S.db", now)
+
+
+def list_backups(root: Path) -> list[Path]:
+    """Lists the backups in the project's backups folder, newest first."""
+    folder = root / BACKUP_FOLDER
+    if not folder.is_dir():
+        return []
+    return sorted(folder.glob(f"{BACKUP_PREFIX}*.db"), reverse=True)
+
+
+def prune_backups(root: Path, kept: int = BACKUPS_KEPT) -> list[Path]:
+    """Deletes all but the newest backups.
+
+    Returns:
+        The deleted files.
+    """
+    old = list_backups(root)[kept:]
+    for path in old:
+        path.unlink(missing_ok=True)
+    return old
+
+
+def backup_database(project: Project, report: Report) -> Path | None:
+    """Copies the bot's database out of its Docker volume into the backups folder.
+
+    SQLite's backup API makes a consistent copy even while the bot writes to the database.
+    Only the newest BACKUPS_KEPT copies stay.
+
+    Returns:
+        The new backup, or None when there was nothing to back up or the copy failed.
+    """
+    if not project.is_bot:
+        return None
+    result = subprocess.run(
+        backup_command(project, _BACKUP_DATABASE), capture_output=True, check=False
+    )
+    if result.returncode != 0:
+        print(f"  {result.stderr.decode(errors='replace').strip()}")
+        report.problem(
+            "The bot's database could not be backed up.",
+            "The previous backups stay, but this run made no new one.",
+            "Read the error above. Make sure Docker runs, then run the backup action again.",
+        )
+        return None
+    if not result.stdout:
+        report.ok("The bot has no database yet, so there was nothing to back up.")
+        return None
+    path = project.root / BACKUP_FOLDER / backup_name(time.localtime())
+    path.parent.mkdir(exist_ok=True)
+    path.write_bytes(result.stdout)
+    prune_backups(project.root)
+    report.ok(f"Backed up the bot's database to {BACKUP_FOLDER}/{path.name}.")
+    return path
+
+
+def backup(project: Project, report: Report) -> bool:
+    """Backs up the bot's database now."""
+    if not project.is_bot:
+        report.ok("This project keeps no database, so there is nothing to back up.")
+        return True
+    if not (check_setup(project, report) and check_docker(report)):
+        return False
+    section("Backing up")
+    return backup_database(project, report) is not None or not report.problems
+
+
+def read_backup_choice(answer: str, count: int) -> int | None:
+    """Reads which backup to restore.
+
+    Args:
+        answer: What the user typed. Enter picks the newest backup, number 1.
+        count: How many backups were listed.
+
+    Returns:
+        The backup's index in the list, or None when the user cancelled.
+
+    Raises:
+        ValueError: The answer is not one of the listed numbers. The message says why.
+    """
+    text = answer.strip().lower()
+    if not text:
+        return 0
+    if text in ("n", "no"):
+        return None
+    if not text.isdigit() or not 1 <= int(text) <= count:
+        raise ValueError(f"Type a number from 1 to {count}, or n to cancel.")
+    return int(text) - 1
+
+
+def choose_backup(backups: list[Path]) -> Path | None:
+    """Lists the backups and asks which one to restore, or returns None when cancelled."""
+    for number, path in enumerate(backups, start=1):
+        size = path.stat().st_size / 1024
+        print(f"  {number}. {path.name} ({size:.0f} KB)")
+    for _ in range(3):
+        try:
+            answer = input(
+                "  Which backup? Press Enter for the newest, or n to cancel: "
+            )
+        except EOFError:
+            print()
+            return None
+        try:
+            index = read_backup_choice(answer, len(backups))
+        except ValueError as error:
+            print(f"  {error}")
+            continue
+        return None if index is None else backups[index]
+    return None
+
+
+def restore(project: Project, report: Report) -> bool:
+    """Replaces the bot's database with a backup, after backing up the current one."""
+    if not project.is_bot:
+        report.ok("This project keeps no database, so there is nothing to restore.")
+        return True
+    backups = list_backups(project.root)
+    if not backups:
+        report.problem(
+            f"There are no backups in the {BACKUP_FOLDER} folder.",
+            "Nothing can be restored.",
+            "The update action and the backup action make backups.",
+        )
+        return False
+    section("Restoring")
+    chosen = choose_backup(backups)
+    if chosen is None:
+        report.skip("No backup was restored.")
+        return True
+    data = chosen.read_bytes()
+    if not data.startswith(SQLITE_HEADER):
+        report.problem(
+            f"{chosen.name} is not a SQLite database.",
+            "Restoring it would break the bot.",
+            "Pick another backup.",
+        )
+        return False
+    if not ask(
+        f"Replace the bot's database with {chosen.name}? "
+        "The current one is backed up first, and the bot restarts."
+    ):
+        report.skip("No backup was restored.")
+        return True
+    if not (check_setup(project, report) and check_docker(report)):
+        return False
+    problems = len(report.problems)
+    backup_database(project, report)
+    if len(report.problems) > problems:
+        # Without a copy of the current database, replacing it could lose data for good.
+        return False
+    run([*project.compose, "stop", "bot"])
+    result = subprocess.run(
+        backup_command(project, _RESTORE_DATABASE),
+        input=data,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        print(f"  {result.stderr.decode(errors='replace').strip()}")
+        report.problem(
+            f"Restoring {chosen.name} failed.",
+            "The bot keeps the database it had.",
+            "Read the error above, then run the restore action again.",
+        )
+    else:
+        report.ok(f"Restored the bot's database from {chosen.name}.")
+    return start(project, report) and result.returncode == 0
 
 
 def update(project: Project, report: Report) -> bool:
@@ -1041,6 +1277,8 @@ def main(argv: list[str]) -> int:
         "status": status,
         "logs": logs,
         "update": update,
+        "backup": backup,
+        "restore": restore,
         "schedule": schedule,
         "unschedule": unschedule,
         "local": run_local,

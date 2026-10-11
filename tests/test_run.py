@@ -4,7 +4,9 @@ import importlib.util
 import io
 import sys
 import tarfile
+import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -368,6 +370,11 @@ def fake_docker(
     monkeypatch.setattr(run_script, "read_release_files", lambda _image: NEW_RELEASE)
     monkeypatch.setattr(run_script, "version_of", lambda _target: "")
     monkeypatch.setattr(run_script, "show_status", lambda _project: None)
+    monkeypatch.setattr(
+        run_script,
+        "backup_database",
+        lambda _project, _report: docker.commands.append(("backup",)),
+    )
     return docker
 
 
@@ -397,6 +404,8 @@ def test_update_installs_the_new_release(
     assert docker.ids == {BOT_IMAGE: "sha256:bot-new", MEDIA_IMAGE: "sha256:media-old"}
     assert not (released_bot / ".update" / "previous").exists()
     assert report.problems == []
+    # The database is backed up before anything changes.
+    assert docker.commands[0] == ("backup",)
 
 
 def test_update_that_fails_to_start_is_undone(
@@ -473,3 +482,163 @@ def test_start_downloads_only_the_missing_images(
 
     assert run_script.start(run_script.detect_project(bot), run_script.Report())
     assert pulls == [["media"]]
+
+
+def test_backup_names_sort_from_oldest_to_newest() -> None:
+    older = run_script.backup_name(
+        time.strptime("2026-10-09 04:00:05", "%Y-%m-%d %H:%M:%S")
+    )
+    newer = run_script.backup_name(
+        time.strptime("2026-10-10 03:59:59", "%Y-%m-%d %H:%M:%S")
+    )
+
+    assert older == "bot-2026-10-09-040005.db"
+    assert sorted([newer, older]) == [older, newer]
+
+
+def make_backups(root: Path, days: int) -> list[Path]:
+    """Creates one backup per day, oldest first."""
+    folder = root / run_script.BACKUP_FOLDER
+    folder.mkdir()
+    paths = []
+    for day in range(1, days + 1):
+        path = folder / f"bot-2026-10-{day:02d}-040000.db"
+        path.write_bytes(run_script.SQLITE_HEADER + bytes([day]))
+        paths.append(path)
+    return paths
+
+
+def test_only_the_newest_backups_stay(tmp_path: Path) -> None:
+    paths = make_backups(tmp_path, days=9)
+    (tmp_path / run_script.BACKUP_FOLDER / "notes.txt").write_text("", encoding="utf-8")
+
+    deleted = run_script.prune_backups(tmp_path)
+
+    assert deleted == [paths[1], paths[0]]
+    assert run_script.list_backups(tmp_path) == paths[:1:-1]
+    assert (tmp_path / run_script.BACKUP_FOLDER / "notes.txt").exists()
+
+
+class FakeRun:
+    """Stands in for subprocess.run and records each command with its input."""
+
+    def __init__(self, stdout: bytes = b"", returncode: int = 0) -> None:
+        self.stdout = stdout
+        self.returncode = returncode
+        self.calls: list[tuple[list[str], bytes | None]] = []
+
+    def __call__(self, command: list[str], **kwargs: object) -> object:
+        data = kwargs.get("input")
+        self.calls.append((command, data if isinstance(data, bytes) else None))
+        return SimpleNamespace(
+            returncode=self.returncode, stdout=self.stdout, stderr=b"boom"
+        )
+
+
+def test_backup_writes_the_database_into_the_backups_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bot = make_bot(tmp_path, "")
+    database = run_script.SQLITE_HEADER + b"settings"
+    fake = FakeRun(stdout=database)
+    monkeypatch.setattr(run_script.subprocess, "run", fake)
+    report = run_script.Report()
+
+    path = run_script.backup_database(run_script.detect_project(bot), report)
+
+    assert path is not None and path.read_bytes() == database
+    assert path.parent == bot / run_script.BACKUP_FOLDER
+    command = fake.calls[0][0]
+    assert command[:4] == ["docker", "compose", "-f", "compose.stack.yml"]
+    assert command[4:8] == ["run", "--rm", "--no-deps", "-T"]
+    assert "bot" in command
+
+
+def test_bot_without_a_database_needs_no_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bot = make_bot(tmp_path, "")
+    monkeypatch.setattr(run_script.subprocess, "run", FakeRun(stdout=b""))
+    report = run_script.Report()
+
+    assert run_script.backup_database(run_script.detect_project(bot), report) is None
+    assert report.problems == []
+    assert not (bot / run_script.BACKUP_FOLDER).exists()
+
+
+def test_failed_backup_is_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bot = make_bot(tmp_path, "")
+    monkeypatch.setattr(run_script.subprocess, "run", FakeRun(returncode=1))
+    report = run_script.Report()
+
+    assert run_script.backup_database(run_script.detect_project(bot), report) is None
+    assert "could not be backed up" in report.problems[0].what
+
+
+@pytest.mark.parametrize(
+    ("answer", "index"),
+    [("", 0), ("1", 0), (" 3 ", 2), ("n", None), ("No", None)],
+)
+def test_read_backup_choice(answer: str, index: int | None) -> None:
+    assert run_script.read_backup_choice(answer, 3) == index
+
+
+@pytest.mark.parametrize("answer", ["0", "4", "newest", "-1"])
+def test_read_backup_choice_rejects_other_answers(answer: str) -> None:
+    with pytest.raises(ValueError, match="1 to 3"):
+        run_script.read_backup_choice(answer, 3)
+
+
+def ready_bot_for_restore(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answers: list[str]
+) -> Path:
+    """A released bot with three backups, Docker stubbed out, and scripted answers."""
+    bot = make_bot(tmp_path, "DISCORD_TOKEN=a.b.c\nAPI_MEDIA_SECRET=generated\n")
+    make_backups(bot, days=3)
+    replies = iter(answers)
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(replies))
+    monkeypatch.setattr(run_script, "ask", lambda _question: True)
+    monkeypatch.setattr(run_script, "check_docker", lambda _report: True)
+    monkeypatch.setattr(run_script, "run", lambda _command: True)
+    monkeypatch.setattr(run_script, "start", lambda _project, _report: True)
+    return bot
+
+
+def test_restore_puts_the_chosen_backup_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bot = ready_bot_for_restore(tmp_path, monkeypatch, answers=["2"])
+    fake = FakeRun(stdout=run_script.SQLITE_HEADER + b"current")
+    monkeypatch.setattr(run_script.subprocess, "run", fake)
+    report = run_script.Report()
+
+    assert run_script.restore(run_script.detect_project(bot), report)
+    # The first run backs up the current database, and the second writes the chosen one.
+    assert len(fake.calls) == 2
+    assert fake.calls[1][1] == run_script.SQLITE_HEADER + bytes([2])
+    assert report.problems == []
+
+
+def test_restore_stops_when_the_current_database_cannot_be_saved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bot = ready_bot_for_restore(tmp_path, monkeypatch, answers=[""])
+    fake = FakeRun(returncode=1)
+    monkeypatch.setattr(run_script.subprocess, "run", fake)
+    report = run_script.Report()
+
+    assert not run_script.restore(run_script.detect_project(bot), report)
+    assert len(fake.calls) == 1
+
+
+def test_restore_refuses_a_file_that_is_not_a_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bot = ready_bot_for_restore(tmp_path, monkeypatch, answers=[""])
+    run_script.list_backups(bot)[0].write_bytes(b"not a database")
+    report = run_script.Report()
+
+    assert not run_script.restore(run_script.detect_project(bot), report)
+    assert "not a SQLite database" in report.problems[0].what
