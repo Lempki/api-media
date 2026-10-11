@@ -56,6 +56,9 @@ _VERSION_SUFFIX = re.compile(r"-v?(\d+(?:\.\d+)*)")
 # A Discord bot token has three dot-separated parts.
 _DISCORD_TOKEN = re.compile(r"[\w-]+\.[\w-]+\.[\w-]+")
 
+# A language code that localization.py may hold, such as fi or pt-BR.
+_LOCALE_CODE = re.compile(r"[a-z]{2,3}(-[A-Z]{2})?")
+
 # The project name at the top of a compose file, such as "name: api-media".
 _PROJECT_NAME = re.compile(r"^name:\s*([\w.-]+)\s*$", re.MULTILINE)
 
@@ -672,6 +675,66 @@ def fill_discord_token(text: str, report: Report) -> str:
         return text
     report.ok("Saved DISCORD_TOKEN in .env.")
     return set_env_value(text, "DISCORD_TOKEN", token)
+
+
+def read_locale_answer(answer: str, suggested: str) -> str:
+    """Reads the answer to the language question.
+
+    Args:
+        answer: What the user typed.
+        suggested: The language that pressing Enter accepts.
+
+    Returns:
+        The language code, or silent.
+
+    Raises:
+        ValueError: The answer is not a language code. The message says what to type.
+    """
+    text = answer.strip()
+    if not text:
+        return suggested
+    if text.lower() == "silent":
+        return "silent"
+    if not _LOCALE_CODE.fullmatch(text):
+        raise ValueError("Type a language code such as en or fi, or silent.")
+    return text
+
+
+def fill_locale(text: str, report: Report) -> str:
+    """Asks for the bot's fallback language when .env does not set LOCALE.
+
+    Without LOCALE the bot stays silent in public, which surprises anyone who does not know it.
+    The commented-out example in .env.template is the suggestion, so a bot can name its own.
+    """
+    current = env_value(text, "LOCALE")
+    if current:
+        report.ok(f"LOCALE is already set to {current} in .env.")
+        return text
+    suggested = commented_value(text, "LOCALE") or "silent"
+    print(
+        "  The bot replies in each user's Discord language when it speaks it, such as Finnish."
+    )
+    print("  LOCALE is the language for everyone else.")
+    print(
+        "  silent mutes public replies, such as what /play added, "
+        "and keeps private ones, such as /help."
+    )
+    for _ in range(3):
+        try:
+            answer = input(f"  Type en, fi, or silent. Press Enter for {suggested}: ")
+        except EOFError:
+            print()
+            report.skip("LOCALE was not set, so public replies stay muted.")
+            return text
+        try:
+            value = read_locale_answer(answer, suggested)
+        except ValueError as error:
+            print(f"  {error}")
+            continue
+        report.ok(f"Set LOCALE to {value} in .env.")
+        return set_env_value(text, "LOCALE", value)
+    report.skip("LOCALE was not set, because no usable language was given.")
+    return text
 
 
 def fill_stack_secrets(text: str, compose: str, report: Report) -> str:
@@ -1842,6 +1905,7 @@ def main() -> int:
         if is_bot:
             env_text = fill_discord_token(original, report)
             has_token = not is_placeholder(env_value(env_text, "DISCORD_TOKEN"))
+            env_text = fill_locale(env_text, report)
             env_text = fill_stack_secrets(env_text, compose, report)
         else:
             env_text = fill_api_secret(original, report)

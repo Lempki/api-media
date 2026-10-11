@@ -634,3 +634,64 @@ def test_parse_config_images_marks_the_projects_own_image(tmp_path: Path) -> Non
         ("bot", "ghcr.io/lempki/discord-bot-x:latest", True),
         ("media", "ghcr.io/lempki/api-media:latest", False),
     ]
+
+
+@pytest.mark.parametrize(
+    ("answer", "language"),
+    [("", "fi"), ("en", "en"), (" SILENT ", "silent"), ("pt-BR", "pt-BR")],
+)
+def test_read_locale_answer(answer: str, language: str) -> None:
+    assert bootstrap.read_locale_answer(answer, "fi") == language
+
+
+@pytest.mark.parametrize("answer", ["Finnish", "e", "en_US", "y"])
+def test_read_locale_answer_rejects_other_text(answer: str) -> None:
+    with pytest.raises(ValueError, match="language code"):
+        bootstrap.read_locale_answer(answer, "fi")
+
+
+def answer_with(monkeypatch: pytest.MonkeyPatch, *answers: str) -> None:
+    replies = iter(answers)
+
+    def reply(_prompt: str) -> str:
+        try:
+            return next(replies)
+        except StopIteration:
+            raise EOFError from None
+
+    monkeypatch.setattr("builtins.input", reply)
+
+
+def test_enter_takes_the_language_that_the_template_suggests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answer_with(monkeypatch, "")
+    template = "DISCORD_TOKEN=a.b.c\n# LOCALE=fi\n"
+
+    result = bootstrap.fill_locale(template, bootstrap.Report())
+
+    assert result.splitlines()[1] == "LOCALE=fi"
+
+
+def test_wrong_answer_is_asked_again(monkeypatch: pytest.MonkeyPatch) -> None:
+    answer_with(monkeypatch, "Finnish", "en")
+
+    result = bootstrap.fill_locale("# LOCALE=silent\n", bootstrap.Report())
+
+    assert result == "LOCALE=en\n"
+
+
+def test_set_language_is_never_asked_for(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("builtins.input", pytest.fail)
+
+    assert bootstrap.fill_locale("LOCALE=en\n", bootstrap.Report()) == "LOCALE=en\n"
+
+
+def test_language_stays_unset_without_an_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answer_with(monkeypatch)
+    report = bootstrap.Report()
+
+    assert bootstrap.fill_locale("# LOCALE=silent\n", report) == "# LOCALE=silent\n"
+    assert "LOCALE was not set" in report.skipped[0]
